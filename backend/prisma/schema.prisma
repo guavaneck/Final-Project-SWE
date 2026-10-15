@@ -1,0 +1,222 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AccountStatus {
+  active
+  disabled
+  deleted
+
+  @@map("account_status")
+}
+
+enum Visibility {
+  public
+  private
+
+  @@map("visibility")
+}
+
+enum PostType {
+  text
+  link
+  media
+
+  @@map("post_type")
+}
+
+enum UploadStatus {
+  pending
+  ready
+  failed
+
+  @@map("upload_status")
+}
+
+model User {
+  id             String        @id @db.Uuid
+  username       String        @unique @db.VarChar(32)
+  email          String        @unique @db.VarChar(320)
+  passwordHash   String        @map("password_hash")
+  displayName    String        @map("display_name") @db.VarChar(80)
+  bio            String?       @db.VarChar(500)
+  accountStatus  AccountStatus @default(active) @map("account_status")
+  avatarMediaId  String?       @map("avatar_media_id") @db.Uuid
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime      @default(now()) @map("updated_at") @db.Timestamptz
+  deletedAt      DateTime?     @map("deleted_at") @db.Timestamptz
+  avatarMedia    MediaObject?  @relation("UserAvatar", fields: [avatarMediaId], references: [id], onDelete: SetNull)
+  comments       Comment[]
+  communities    Community[]
+  memberships    CommunityMembership[]
+  mediaObjects   MediaObject[] @relation("MediaOwner")
+  posts          Post[]
+  sessions       Session[]
+  postLikes      PostLike[]
+  commentLikes   CommentLike[]
+  following      UserFollow[]  @relation("Follower")
+  followers      UserFollow[]  @relation("Followed")
+
+  @@map("users")
+}
+
+model Session {
+  id         String    @id @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash") @db.VarChar(128)
+  deviceName String?   @map("device_name") @db.VarChar(120)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Community {
+  id          String     @id @db.Uuid
+  creatorId   String     @map("creator_id") @db.Uuid
+  slug        String     @unique @db.VarChar(64)
+  name        String     @db.VarChar(100)
+  description String?    @db.VarChar(1000)
+  visibility  Visibility @default(public)
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime   @default(now()) @map("updated_at") @db.Timestamptz
+  creator     User       @relation(fields: [creatorId], references: [id])
+  memberships CommunityMembership[]
+  posts       Post[]
+
+  @@map("communities")
+}
+
+model CommunityMembership {
+  communityId String    @map("community_id") @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  joinedAt    DateTime  @default(now()) @map("joined_at") @db.Timestamptz
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([communityId, userId])
+  @@index([userId, communityId])
+  @@map("community_memberships")
+}
+
+model UserFollow {
+  followerId String   @map("follower_id") @db.Uuid
+  followedId String   @map("followed_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  follower   User     @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  followed   User     @relation("Followed", fields: [followedId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followedId])
+  @@index([followedId])
+  @@map("user_follows")
+}
+
+model Post {
+  id          String    @id @db.Uuid
+  authorId    String    @map("author_id") @db.Uuid
+  communityId String    @map("community_id") @db.Uuid
+  postType    PostType  @map("post_type")
+  title       String    @db.VarChar(300)
+  body        String?
+  externalUrl String?   @map("external_url")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  author      User      @relation(fields: [authorId], references: [id])
+  community   Community @relation(fields: [communityId], references: [id])
+  comments    Comment[]
+  likes       PostLike[]
+  media       PostMedia[]
+
+  @@index([communityId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([authorId, createdAt(sort: Desc), id(sort: Desc)])
+  @@map("posts")
+}
+
+model Comment {
+  id        String    @id @db.Uuid
+  postId    String    @map("post_id") @db.Uuid
+  authorId  String    @map("author_id") @db.Uuid
+  parentId  String?   @map("parent_id") @db.Uuid
+  body      String?
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+  author    User      @relation(fields: [authorId], references: [id])
+  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  parent    Comment?  @relation("CommentReplies", fields: [parentId, postId], references: [id, postId])
+  replies   Comment[] @relation("CommentReplies")
+  likes     CommentLike[]
+
+  @@unique([id, postId])
+  @@index([postId, createdAt, id])
+  @@index([parentId, createdAt, id])
+  @@map("comments")
+}
+
+model PostLike {
+  postId    String   @map("post_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([postId, userId])
+  @@index([userId])
+  @@map("post_likes")
+}
+
+model CommentLike {
+  commentId String   @map("comment_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([commentId, userId])
+  @@index([userId])
+  @@map("comment_likes")
+}
+
+model MediaObject {
+  id              String       @id @db.Uuid
+  ownerId         String       @map("owner_id") @db.Uuid
+  bucket          String       @db.VarChar(63)
+  objectKey       String       @map("object_key")
+  mimeType        String       @map("mime_type") @db.VarChar(255)
+  sizeBytes       BigInt       @map("size_bytes")
+  checksumSha256  String?      @map("checksum_sha256") @db.Char(64)
+  uploadStatus    UploadStatus @default(pending) @map("upload_status")
+  width           Int?
+  height          Int?
+  durationSeconds Decimal?     @map("duration_seconds") @db.Decimal(12, 3)
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  completedAt     DateTime?    @map("completed_at") @db.Timestamptz
+  owner           User         @relation("MediaOwner", fields: [ownerId], references: [id])
+  avatarFor       User[]       @relation("UserAvatar")
+  postMedia       PostMedia?
+
+  @@unique([bucket, objectKey])
+  @@index([ownerId])
+  @@map("media_objects")
+}
+
+model PostMedia {
+  postId   String      @map("post_id") @db.Uuid
+  mediaId  String      @unique @map("media_id") @db.Uuid
+  position Int         @db.SmallInt
+  post     Post        @relation(fields: [postId], references: [id], onDelete: Cascade)
+  media    MediaObject @relation(fields: [mediaId], references: [id])
+
+  @@id([postId, mediaId])
+  @@unique([postId, position])
+  @@map("post_media")
+}
