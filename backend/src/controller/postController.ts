@@ -5,3 +5,12 @@
 import type { Request, Response } from "express";
 import * as db from "../db/index.js";
 
+//GET /api/posts/:postId
+export async function getPost(req: Request<{postId: string}>, res: Response) {
+  const post = await db.getPostById(req.params.postId);
+    if (!post) {
+        return res.status(404).json({ error: "Post not found" });
+    }
+    res.json(post);
+}
+
