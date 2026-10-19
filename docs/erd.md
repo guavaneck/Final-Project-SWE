@@ -42,7 +42,7 @@ erDiagram
         uuid id PK
         uuid user_id FK "CASCADE"
         varchar token_hash UK "max 128"
-        varchar device_name "nullable"
+        varchar device_name "nullable, max 120"
         timestamptz expires_at
         timestamptz revoked_at "nullable"
         timestamptz created_at
@@ -73,13 +73,13 @@ erDiagram
 
     posts {
         uuid id PK
-        varchar public_id UK "12-char Crockford base32"
+        varchar public_id UK "12-char Crockford base32, used in URLs"
         uuid author_id FK
         uuid community_id FK
         post_type post_type "text | link | media"
         varchar title "max 300"
-        text body "nullable"
-        text external_url "nullable"
+        text body "nullable, required for text posts"
+        text external_url "nullable, required for link posts, null for text posts"
         timestamptz created_at
         timestamptz updated_at
         timestamptz deleted_at "nullable"
@@ -112,15 +112,15 @@ erDiagram
     media_objects {
         uuid id PK
         uuid owner_id FK
-        varchar bucket "UK with object_key"
+        varchar bucket "max 63, UK with object_key"
         text object_key "UK with bucket"
-        varchar mime_type
+        varchar mime_type "max 255"
         bigint size_bytes ">= 0"
-        char checksum_sha256 "nullable"
+        char checksum_sha256 "nullable, 64 chars"
         upload_status upload_status "pending | ready | failed"
         int width "nullable, > 0"
         int height "nullable, > 0"
-        decimal duration_seconds "nullable, >= 0"
+        decimal duration_seconds "nullable, >= 0, numeric(12, 3)"
         timestamptz created_at
         timestamptz completed_at "nullable"
     }
@@ -131,3 +131,9 @@ erDiagram
         smallint position "UK with post_id, >= 0"
     }
 ```
+
+## Notes
+
+- **`posts.id` vs `posts.public_id`:** `id` is the internal key. Other tables use it for their foreign keys. `public_id` is the short ID that the API and URLs use (for example, `/api/posts/R14SZSWA4B69`).
+- **`comments.depth`:** a comment on a post has depth 0. A reply has the depth of its parent plus 1. The API uses `parent_id` to send comments as a tree.
+- **Post type rules:** these apply only while `deleted_at` is null. Media posts have no body or URL rules.
