@@ -23,7 +23,7 @@ The ERD is in [erd.md](erd.md) (Mermaid source) and [swe_erd_v2.pdf](swe_erd_v2.
 
 **`public_id` for posts.** A UUID is too long for a URL. Each post also has a 12-character Crockford base32 ID, for example `/api/posts/R14SZSWA4B69`.
 - Crockford base32 has no I, L, O or U, so people do not confuse letters with numbers.
-- 12 characters give 60 bits. A collision is almost not possible. The unique index and a retry in `createPost` catch one if it occurs.
+- 12 characters give 60 bits. A collision is almost  impossible. The unique index and a retry in `createPost` catch one if it occurs.
 - We added a column instead of a change to the primary key. All foreign keys stay `uuid`, so no other table changes.
 
 **Comment threads with `parent_id` and `depth`.** `parent_id` points to the comment that a reply answers. It is null for a comment on the post.
