@@ -11,7 +11,8 @@
     "postinstall": "prisma generate",
     "test:db": "tsx --env-file-if-exists=../.env --test tests/db.integration.ts",
     "dev": "tsx watch --env-file-if-exists=../.env src/main.ts",
-    "start": "node --env-file-if-exists=../.env dist/main.js"
+    "start": "node --env-file-if-exists=../.env dist/main.js",
+    "db:seed-demo": "tsx --env-file-if-exists=../.env scripts/seed-demo.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.1",
