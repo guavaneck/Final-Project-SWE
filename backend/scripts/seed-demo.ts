@@ -1,4 +1,4 @@
-// Creates a demo user and community for trying the API from the mock frontend.
+// Creates a demo user and community for trying the API by hand.
 // Safe to run more than once: it reuses the existing rows and prints their IDs.
 
 import { closeDatabase, createCommunity, createUser, prisma } from "../src/db/index.js";
