@@ -9,6 +9,7 @@ import {
   deletePost,
   followUser,
   getPostById,
+  getPostByPublicId,
   joinCommunity,
   listHomeFeed,
   prisma,
@@ -58,7 +59,13 @@ test("core social database functions", async () => {
     title: "Hello",
     body: "First post",
   });
-  await createComment(post.id, bob.id, "First reply");
+  assert.match(post.publicId, /^[0-9A-HJKMNP-TV-Z]{12}$/);
+  assert.equal((await getPostByPublicId(post.publicId))?.id, post.id);
+
+  const comment = await createComment(post.id, bob.id, "First reply");
+  assert.equal(comment?.depth, 0);
+  const reply = await createComment(post.id, alice.id, "Reply to reply", comment?.id);
+  assert.equal(reply?.depth, 1);
   await setPostLiked(post.id, bob.id, true);
 
   const feed = await listHomeFeed(bob.id);

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { PostType } from "../generated/prisma/enums.js";
+import { Prisma } from "../generated/prisma/client.js";
 import { prisma } from "./client.js";
+import { generatePublicId } from "./publicId.js";
 
 export interface PageCursor {
   createdAt: Date;
@@ -26,12 +28,26 @@ function beforeCursor(cursor?: PageCursor) {
   };
 }
 
-export function createPost(input: CreatePostInput) {
-  return prisma.post.create({ data: { id: randomUUID(), ...input } });
+export async function createPost(input: CreatePostInput) {
+  // A public ID collision is astronomically unlikely, but retry on one rather than fail the request.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await prisma.post.create({
+        data: { id: randomUUID(), publicId: generatePublicId(), ...input },
+      });
+    } catch (err) {
+      const collided = err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
+      if (!collided || attempt === 3) throw err;
+    }
+  }
 }
 
 export function getPostById(id: string) {
   return prisma.post.findFirst({ where: { id, deletedAt: null } });
+}
+
+export function getPostByPublicId(publicId: string) {
+  return prisma.post.findFirst({ where: { publicId, deletedAt: null } });
 }
 
 export function listCommunityPosts(communityId: string, limit = 20, cursor?: PageCursor) {
@@ -80,9 +96,19 @@ export async function deletePost(id: string, authorId: string): Promise<boolean>
   return result.count === 1;
 }
 
-export function createComment(postId: string, authorId: string, body: string, parentId?: string) {
+// Returns null when parentId is given but no such comment exists on this post.
+export async function createComment(postId: string, authorId: string, body: string, parentId?: string) {
+  let depth = 0;
+  if (parentId) {
+    const parent = await prisma.comment.findFirst({
+      where: { id: parentId, postId },
+      select: { depth: true },
+    });
+    if (!parent) return null;
+    depth = parent.depth + 1;
+  }
   return prisma.comment.create({
-    data: { id: randomUUID(), postId, authorId, body, parentId },
+    data: { id: randomUUID(), postId, authorId, body, parentId, depth },
   });
 }
 
