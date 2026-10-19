@@ -2,7 +2,6 @@
 // Belongs here: app setup and listen(), e.g. registering the posts router under /api/posts. No business logic.
 
 import express, { type NextFunction, type Request, type Response } from "express";
-import { fileURLToPath } from "node:url";
 import postsRouter from "./routes/posts.js";
 
 const app = express();
@@ -15,9 +14,6 @@ app.use("/api/posts", postsRouter);
 app.use("/api", (_req, res) => {
   res.status(404).json({ error: "Not found" });
 });
-
-// Serves the mock frontend, so the page and the API share one origin (no CORS needed).
-app.use(express.static(fileURLToPath(new URL("../../frontend/src", import.meta.url))));
 
 // Express 5 forwards errors thrown in async handlers here.
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
