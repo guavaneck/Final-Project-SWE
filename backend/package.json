@@ -11,6 +11,7 @@
     "db:studio": "prisma studio",
     "postinstall": "prisma generate",
     "test:db": "tsx --env-file-if-exists=../.env --test tests/db.integration.ts",
+    "test:auth": "tsx --test tests/auth.unit.ts",
     "dev": "tsx watch --env-file-if-exists=../.env src/main.ts",
     "start": "node --env-file-if-exists=../.env dist/main.js",
     "db:seed-demo": "tsx --env-file-if-exists=../.env scripts/seed-demo.ts"

@@ -58,6 +58,23 @@ Run the database integration test while PostgreSQL is running:
 npm --prefix backend run test:db
 ```
 
+Run the authentication unit tests (no database required):
+
+```sh
+npm --prefix backend run test:auth
+```
+
+## API authentication
+
+Authentication uses opaque 30-day sessions. The raw token is returned once by registration or login; the database stores only its SHA-256 hash. Send it on protected requests as `Authorization: Bearer <token>`.
+
+- `POST /api/auth/register` accepts `username`, `email`, `displayName`, `password`, and optional `deviceName`.
+- `POST /api/auth/login` accepts `login` (username or email), `password`, and optional `deviceName`.
+- `GET /api/auth/me` returns the current user.
+- `POST /api/auth/logout` revokes the current session.
+
+Creating, editing, or deleting posts and creating comments requires a bearer token. The authenticated user's ID is always used as the author; client-supplied author IDs are ignored. Post responses include both the stable `authorId` ownership key and `author.username` for display.
+
 Stop the services without deleting their data:
 
 ```sh

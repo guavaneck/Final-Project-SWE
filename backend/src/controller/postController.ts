@@ -5,19 +5,9 @@
 import type { Request, Response } from "express";
 import * as db from "../db/index.js";
 import * as postService from "../services/postService.js";
+import { authenticatedUser } from "../middleware/auth.js";
 
 const POST_TYPES = ["text", "link", "media"] as const;
-
-// TEMPORARY: there is no login yet, so the caller says who they are with an X-User-Id header.
-// Replace this with a real session check once auth exists.
-function currentUserId(req: Request, res: Response): string | undefined {
-  const userId = req.header("x-user-id");
-  if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
-    return undefined;
-  }
-  return userId;
-}
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value : undefined;
@@ -42,8 +32,7 @@ export async function getPost(req: Request<{ postId: string }>, res: Response) {
 
 //POST /api/posts
 export async function createPost(req: Request, res: Response) {
-  const authorId = currentUserId(req, res);
-  if (!authorId) return;
+  const authorId = authenticatedUser(req).id;
 
   const { communityId, postType, title, body, externalUrl } = req.body ?? {};
   if (typeof communityId !== "string" || communityId === "") {
@@ -69,8 +58,7 @@ export async function createPost(req: Request, res: Response) {
 
 //PATCH /api/posts/:postId
 export async function updatePost(req: Request<{ postId: string }>, res: Response) {
-  const authorId = currentUserId(req, res);
-  if (!authorId) return;
+  const authorId = authenticatedUser(req).id;
 
   const { title, body, externalUrl } = req.body ?? {};
   if (typeof title !== "string" || title.trim() === "") {
@@ -93,8 +81,7 @@ export async function updatePost(req: Request<{ postId: string }>, res: Response
 
 //DELETE /api/posts/:postId
 export async function deletePost(req: Request<{ postId: string }>, res: Response) {
-  const authorId = currentUserId(req, res);
-  if (!authorId) return;
+  const authorId = authenticatedUser(req).id;
 
   const post = await findPost(req, res);
   if (!post) return;
@@ -115,8 +102,7 @@ export async function listComments(req: Request<{ postId: string }>, res: Respon
 
 //POST /api/posts/:postId/comments
 export async function createComment(req: Request<{ postId: string }>, res: Response) {
-  const authorId = currentUserId(req, res);
-  if (!authorId) return;
+  const authorId = authenticatedUser(req).id;
 
   const { body, parentId } = req.body ?? {};
   if (typeof body !== "string" || body.trim() === "") {

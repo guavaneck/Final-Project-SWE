@@ -3,15 +3,16 @@
 
 import { Router } from "express";
 import * as posts from "../controller/postController.js";
+import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
 
 router.get("/:postId", posts.getPost);
-router.post("/", posts.createPost);
-router.patch("/:postId", posts.updatePost);
-router.delete("/:postId", posts.deletePost);
+router.post("/", requireAuth, posts.createPost);
+router.patch("/:postId", requireAuth, posts.updatePost);
+router.delete("/:postId", requireAuth, posts.deletePost);
 
 router.get("/:postId/comments", posts.listComments);
-router.post("/:postId/comments", posts.createComment);
+router.post("/:postId/comments", requireAuth, posts.createComment);
 
 export default router;

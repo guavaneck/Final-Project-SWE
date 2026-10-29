@@ -4,6 +4,8 @@ import { Prisma } from "../generated/prisma/client.js";
 import { prisma } from "./client.js";
 import { generatePublicId } from "./publicId.js";
 
+const withAuthorUsername = { author: { select: { username: true } } } as const;
+
 export interface PageCursor {
   createdAt: Date;
   id: string;
@@ -34,6 +36,7 @@ export async function createPost(input: CreatePostInput) {
     try {
       return await prisma.post.create({
         data: { id: randomUUID(), publicId: generatePublicId(), ...input },
+        include: withAuthorUsername,
       });
     } catch (err) {
       const collided = err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
@@ -43,11 +46,11 @@ export async function createPost(input: CreatePostInput) {
 }
 
 export function getPostById(id: string) {
-  return prisma.post.findFirst({ where: { id, deletedAt: null } });
+  return prisma.post.findFirst({ where: { id, deletedAt: null }, include: withAuthorUsername });
 }
 
 export function getPostByPublicId(publicId: string) {
-  return prisma.post.findFirst({ where: { publicId, deletedAt: null } });
+  return prisma.post.findFirst({ where: { publicId, deletedAt: null }, include: withAuthorUsername });
 }
 
 export function listCommunityPosts(communityId: string, limit = 20, cursor?: PageCursor) {
@@ -55,6 +58,7 @@ export function listCommunityPosts(communityId: string, limit = 20, cursor?: Pag
     where: { communityId, deletedAt: null, ...beforeCursor(cursor) },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: Math.min(Math.max(limit, 1), 100),
+    include: withAuthorUsername,
   });
 }
 
@@ -75,6 +79,7 @@ export function listHomeFeed(userId: string, limit = 20, cursor?: PageCursor) {
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: Math.min(Math.max(limit, 1), 100),
+    include: withAuthorUsername,
   });
 }
 
@@ -85,7 +90,11 @@ export async function updatePost(
 ) {
   const existing = await prisma.post.findFirst({ where: { id, authorId, deletedAt: null } });
   if (!existing) return null;
-  return prisma.post.update({ where: { id }, data: { ...changes, updatedAt: new Date() } });
+  return prisma.post.update({
+    where: { id },
+    data: { ...changes, updatedAt: new Date() },
+    include: withAuthorUsername,
+  });
 }
 
 export async function deletePost(id: string, authorId: string): Promise<boolean> {
