@@ -16,5 +16,7 @@ router.delete("/:postId/like", requireAuth, posts.unlikePost);
 
 router.get("/:postId/comments", posts.listComments);
 router.post("/:postId/comments", requireAuth, posts.createComment);
+router.put("/:postId/comments/:commentId/like", requireAuth, posts.likeComment);
+router.delete("/:postId/comments/:commentId/like", requireAuth, posts.unlikeComment);
 
 export default router;

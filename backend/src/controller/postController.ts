@@ -138,3 +138,40 @@ export async function createComment(req: Request<{ postId: string }>, res: Respo
   }
   res.status(201).json(comment);
 }
+
+async function findComment(
+  req: Request<{ postId: string; commentId: string }>,
+  res: Response,
+) {
+  const post = await findPost(req, res);
+  if (!post) return null;
+  const comment = await db.getCommentOnPost(req.params.commentId, post.id);
+  if (!comment) res.status(404).json({ error: "Comment not found on this post" });
+  return comment;
+}
+
+// PUT /api/posts/:postId/comments/:commentId/like
+export async function likeComment(
+  req: Request<{ postId: string; commentId: string }>,
+  res: Response,
+) {
+  const userId = authenticatedUser(req).id;
+  const comment = await findComment(req, res);
+  if (!comment) return;
+
+  await db.setCommentLiked(comment.id, userId, true);
+  res.json(await db.getCommentLikeSummary(comment.id, userId));
+}
+
+// DELETE /api/posts/:postId/comments/:commentId/like
+export async function unlikeComment(
+  req: Request<{ postId: string; commentId: string }>,
+  res: Response,
+) {
+  const userId = authenticatedUser(req).id;
+  const comment = await findComment(req, res);
+  if (!comment) return;
+
+  await db.setCommentLiked(comment.id, userId, false);
+  res.json(await db.getCommentLikeSummary(comment.id, userId));
+}

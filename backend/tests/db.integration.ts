@@ -11,10 +11,12 @@ import {
   getPostLikeSummary,
   getPostById,
   getPostByPublicId,
+  getCommentLikeSummary,
   joinCommunity,
   listHomeFeed,
   prisma,
   setPostLiked,
+  setCommentLiked,
 } from "../src/db/index.js";
 
 const createdUserIds: string[] = [];
@@ -65,6 +67,17 @@ test("core social database functions", async () => {
 
   const comment = await createComment(post.id, bob.id, "First reply");
   assert.equal(comment?.depth, 0);
+  assert.ok(comment);
+  await setCommentLiked(comment.id, alice.id, true);
+  assert.deepEqual(await getCommentLikeSummary(comment.id, alice.id), {
+    liked: true,
+    likeCount: 1,
+  });
+  await setCommentLiked(comment.id, alice.id, false);
+  assert.deepEqual(await getCommentLikeSummary(comment.id, alice.id), {
+    liked: false,
+    likeCount: 0,
+  });
   const reply = await createComment(post.id, alice.id, "Reply to reply", comment?.id);
   assert.equal(reply?.depth, 1);
   await setPostLiked(post.id, bob.id, true);

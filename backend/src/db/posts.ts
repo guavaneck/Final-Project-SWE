@@ -121,6 +121,14 @@ export async function createComment(postId: string, authorId: string, body: stri
   }
   return prisma.comment.create({
     data: { id: randomUUID(), postId, authorId, body, parentId, depth },
+    include: { author: { select: { username: true } }, _count: { select: { likes: true } } },
+  });
+}
+
+export function getCommentOnPost(commentId: string, postId: string) {
+  return prisma.comment.findFirst({
+    where: { id: commentId, postId, deletedAt: null },
+    select: { id: true },
   });
 }
 
@@ -128,6 +136,7 @@ export function listComments(postId: string) {
   return prisma.comment.findMany({
     where: { postId },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    include: { author: { select: { username: true } }, _count: { select: { likes: true } } },
   });
 }
 

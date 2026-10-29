@@ -51,3 +51,14 @@ export async function setCommentLiked(
     await prisma.commentLike.deleteMany({ where: { commentId, userId } });
   }
 }
+
+export async function getCommentLikeSummary(commentId: string, userId: string) {
+  const [likeCount, viewerLike] = await prisma.$transaction([
+    prisma.commentLike.count({ where: { commentId } }),
+    prisma.commentLike.findUnique({
+      where: { commentId_userId: { commentId, userId } },
+      select: { commentId: true },
+    }),
+  ]);
+  return { liked: viewerLike !== null, likeCount };
+}

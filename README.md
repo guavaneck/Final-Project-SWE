@@ -82,6 +82,13 @@ Post likes are authenticated and idempotent:
 
 Both endpoints return `{ "liked": boolean, "likeCount": number }`. Post responses also include the total as `_count.likes`.
 
+Comment likes follow the same authenticated, idempotent contract:
+
+- `PUT /api/posts/:postId/comments/:commentId/like` likes a comment.
+- `DELETE /api/posts/:postId/comments/:commentId/like` removes the current user's like.
+
+Both return `{ "liked": boolean, "likeCount": number }`. Comment responses include the total as `_count.likes`.
+
 Stop the services without deleting their data:
 
 ```sh
