@@ -4,7 +4,10 @@ import { Prisma } from "../generated/prisma/client.js";
 import { prisma } from "./client.js";
 import { generatePublicId } from "./publicId.js";
 
-const withAuthorUsername = { author: { select: { username: true } } } as const;
+const withPostDetails = {
+  author: { select: { username: true } },
+  _count: { select: { likes: true } },
+} as const;
 
 export interface PageCursor {
   createdAt: Date;
@@ -36,7 +39,7 @@ export async function createPost(input: CreatePostInput) {
     try {
       return await prisma.post.create({
         data: { id: randomUUID(), publicId: generatePublicId(), ...input },
-        include: withAuthorUsername,
+        include: withPostDetails,
       });
     } catch (err) {
       const collided = err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
@@ -46,11 +49,11 @@ export async function createPost(input: CreatePostInput) {
 }
 
 export function getPostById(id: string) {
-  return prisma.post.findFirst({ where: { id, deletedAt: null }, include: withAuthorUsername });
+  return prisma.post.findFirst({ where: { id, deletedAt: null }, include: withPostDetails });
 }
 
 export function getPostByPublicId(publicId: string) {
-  return prisma.post.findFirst({ where: { publicId, deletedAt: null }, include: withAuthorUsername });
+  return prisma.post.findFirst({ where: { publicId, deletedAt: null }, include: withPostDetails });
 }
 
 export function listCommunityPosts(communityId: string, limit = 20, cursor?: PageCursor) {
@@ -58,7 +61,7 @@ export function listCommunityPosts(communityId: string, limit = 20, cursor?: Pag
     where: { communityId, deletedAt: null, ...beforeCursor(cursor) },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: Math.min(Math.max(limit, 1), 100),
-    include: withAuthorUsername,
+    include: withPostDetails,
   });
 }
 
@@ -79,7 +82,7 @@ export function listHomeFeed(userId: string, limit = 20, cursor?: PageCursor) {
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: Math.min(Math.max(limit, 1), 100),
-    include: withAuthorUsername,
+    include: withPostDetails,
   });
 }
 
@@ -93,7 +96,7 @@ export async function updatePost(
   return prisma.post.update({
     where: { id },
     data: { ...changes, updatedAt: new Date() },
-    include: withAuthorUsername,
+    include: withPostDetails,
   });
 }
 

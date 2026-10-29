@@ -93,6 +93,26 @@ export async function deletePost(req: Request<{ postId: string }>, res: Response
   res.status(204).end();
 }
 
+// PUT /api/posts/:postId/like
+export async function likePost(req: Request<{ postId: string }>, res: Response) {
+  const userId = authenticatedUser(req).id;
+  const post = await findPost(req, res);
+  if (!post) return;
+
+  await db.setPostLiked(post.id, userId, true);
+  res.json(await db.getPostLikeSummary(post.id, userId));
+}
+
+// DELETE /api/posts/:postId/like
+export async function unlikePost(req: Request<{ postId: string }>, res: Response) {
+  const userId = authenticatedUser(req).id;
+  const post = await findPost(req, res);
+  if (!post) return;
+
+  await db.setPostLiked(post.id, userId, false);
+  res.json(await db.getPostLikeSummary(post.id, userId));
+}
+
 //GET /api/posts/:postId/comments
 export async function listComments(req: Request<{ postId: string }>, res: Response) {
   const post = await findPost(req, res);

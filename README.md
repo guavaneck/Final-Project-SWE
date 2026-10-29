@@ -75,6 +75,13 @@ Authentication uses opaque 30-day sessions. The raw token is returned once by re
 
 Creating, editing, or deleting posts and creating comments requires a bearer token. The authenticated user's ID is always used as the author; client-supplied author IDs are ignored. Post responses include both the stable `authorId` ownership key and `author.username` for display.
 
+Post likes are authenticated and idempotent:
+
+- `PUT /api/posts/:postId/like` likes a post.
+- `DELETE /api/posts/:postId/like` removes the current user's like.
+
+Both endpoints return `{ "liked": boolean, "likeCount": number }`. Post responses also include the total as `_count.likes`.
+
 Stop the services without deleting their data:
 
 ```sh

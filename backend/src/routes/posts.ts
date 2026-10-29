@@ -11,6 +11,8 @@ router.get("/:postId", posts.getPost);
 router.post("/", requireAuth, posts.createPost);
 router.patch("/:postId", requireAuth, posts.updatePost);
 router.delete("/:postId", requireAuth, posts.deletePost);
+router.put("/:postId/like", requireAuth, posts.likePost);
+router.delete("/:postId/like", requireAuth, posts.unlikePost);
 
 router.get("/:postId/comments", posts.listComments);
 router.post("/:postId/comments", requireAuth, posts.createComment);

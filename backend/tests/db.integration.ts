@@ -8,6 +8,7 @@ import {
   createUser,
   deletePost,
   followUser,
+  getPostLikeSummary,
   getPostById,
   getPostByPublicId,
   joinCommunity,
@@ -66,6 +67,10 @@ test("core social database functions", async () => {
   assert.equal(comment?.depth, 0);
   const reply = await createComment(post.id, alice.id, "Reply to reply", comment?.id);
   assert.equal(reply?.depth, 1);
+  await setPostLiked(post.id, bob.id, true);
+  assert.deepEqual(await getPostLikeSummary(post.id, bob.id), { liked: true, likeCount: 1 });
+  await setPostLiked(post.id, bob.id, false);
+  assert.deepEqual(await getPostLikeSummary(post.id, bob.id), { liked: false, likeCount: 0 });
   await setPostLiked(post.id, bob.id, true);
 
   const feed = await listHomeFeed(bob.id);

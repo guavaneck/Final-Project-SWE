@@ -25,6 +25,17 @@ export async function setPostLiked(postId: string, userId: string, liked: boolea
   }
 }
 
+export async function getPostLikeSummary(postId: string, userId: string) {
+  const [likeCount, viewerLike] = await prisma.$transaction([
+    prisma.postLike.count({ where: { postId } }),
+    prisma.postLike.findUnique({
+      where: { postId_userId: { postId, userId } },
+      select: { postId: true },
+    }),
+  ]);
+  return { liked: viewerLike !== null, likeCount };
+}
+
 export async function setCommentLiked(
   commentId: string,
   userId: string,
