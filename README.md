@@ -89,6 +89,29 @@ Comment likes follow the same authenticated, idempotent contract:
 
 Both return `{ "liked": boolean, "likeCount": number }`. Comment responses include the total as `_count.likes`.
 
+## Managing posts and comments
+
+Only the author can edit or delete a post or comment; anyone else gets `403`.
+
+- `POST /api/posts` accepts `communityId`, `postType` (`text`, `link`, or `media`), `title` (1-300 characters), `body`, and `externalUrl`. Text posts need a `body` and can't have an `externalUrl`; link posts need an `http` or `https` `externalUrl`.
+- `PATCH /api/posts/:postId` accepts any of `title`, `body`, and `externalUrl`. Omitted fields stay the same; `null` or `""` clears `body` or `externalUrl`. The result must still follow the rules for the post's type.
+- `DELETE /api/posts/:postId` deletes a post.
+- `PATCH /api/posts/:postId/comments/:commentId` accepts `body` and edits a comment. A comment whose `updatedAt` is later than its `createdAt` has been edited.
+- `DELETE /api/posts/:postId/comments/:commentId` deletes a comment. It stays in the thread with a `null` body so its replies keep their place, and it can't be replied to.
+
+## Feeds
+
+Both feeds return `{ "posts": [...], "nextCursor": string | null }`, newest first. Pass `?limit=` (1-100, default 20) and, for the next page, `?cursor=` set to the previous page's `nextCursor`. `nextCursor` is `null` when there are no more posts.
+
+- `GET /api/posts/feed` (authenticated) lists posts by the current user, by people they follow, and in communities they've joined.
+- `GET /api/communities/:communityId/posts` lists a community's posts.
+
+Run the post validation unit tests (no database required):
+
+```sh
+npm --prefix backend run test:posts
+```
+
 Stop the services without deleting their data:
 
 ```sh
