@@ -22,6 +22,10 @@ export function createCommunity(input: CreateCommunityInput) {
   });
 }
 
+export function getCommunityById(id: string) {
+  return prisma.community.findUnique({ where: { id } });
+}
+
 export async function joinCommunity(communityId: string, userId: string): Promise<void> {
   await prisma.communityMembership.upsert({
     where: { communityId_userId: { communityId, userId } },
