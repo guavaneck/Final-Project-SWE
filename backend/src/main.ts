@@ -3,12 +3,14 @@
 
 import express, { type NextFunction, type Request, type Response } from "express";
 import postsRouter from "./routes/posts.js";
+import authRouter from "./routes/auth.js";
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
 
 app.use(express.json());
 
+app.use("/api/auth", authRouter);
 app.use("/api/posts", postsRouter);
 
 app.use("/api", (_req, res) => {
