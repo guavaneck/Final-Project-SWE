@@ -43,6 +43,20 @@ export function getPasswordHashByEmail(email: string) {
   });
 }
 
+export function getUserCredentials(login: string) {
+  return prisma.user.findFirst({
+    where: {
+      accountStatus: "active",
+      deletedAt: null,
+      OR: [
+        { email: { equals: login, mode: "insensitive" } },
+        { username: { equals: login, mode: "insensitive" } },
+      ],
+    },
+    select: { id: true, username: true, email: true, displayName: true, passwordHash: true },
+  });
+}
+
 export async function deleteUser(id: string): Promise<boolean> {
   const result = await prisma.user.updateMany({
     where: { id, deletedAt: null },
@@ -67,6 +81,35 @@ export async function createSession(
 export async function revokeSession(id: string, userId: string): Promise<boolean> {
   const result = await prisma.session.updateMany({
     where: { id, userId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+  return result.count === 1;
+}
+
+
+export function getActiveSessionByTokenHash(tokenHash: string) {
+  return prisma.session.findFirst({
+    where: { tokenHash, revokedAt: null, expiresAt: { gt: new Date() } },
+    select: {
+      id: true,
+      expiresAt: true,
+      user: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          displayName: true,
+          accountStatus: true,
+          deletedAt: true,
+        },
+      },
+    },
+  });
+}
+
+export async function revokeSessionByTokenHash(tokenHash: string): Promise<boolean> {
+  const result = await prisma.session.updateMany({
+    where: { tokenHash, revokedAt: null },
     data: { revokedAt: new Date() },
   });
   return result.count === 1;

@@ -58,6 +58,37 @@ Run the database integration test while PostgreSQL is running:
 npm --prefix backend run test:db
 ```
 
+Run the authentication unit tests (no database required):
+
+```sh
+npm --prefix backend run test:auth
+```
+
+## API authentication
+
+Authentication uses opaque 30-day sessions. The raw token is returned once by registration or login; the database stores only its SHA-256 hash. Send it on protected requests as `Authorization: Bearer <token>`.
+
+- `POST /api/auth/register` accepts `username`, `email`, `displayName`, `password`, and optional `deviceName`.
+- `POST /api/auth/login` accepts `login` (username or email), `password`, and optional `deviceName`.
+- `GET /api/auth/me` returns the current user.
+- `POST /api/auth/logout` revokes the current session.
+
+Creating, editing, or deleting posts and creating comments requires a bearer token. The authenticated user's ID is always used as the author; client-supplied author IDs are ignored. Post responses include both the stable `authorId` ownership key and `author.username` for display.
+
+Post likes are authenticated and idempotent:
+
+- `PUT /api/posts/:postId/like` likes a post.
+- `DELETE /api/posts/:postId/like` removes the current user's like.
+
+Both endpoints return `{ "liked": boolean, "likeCount": number }`. Post responses also include the total as `_count.likes`.
+
+Comment likes follow the same authenticated, idempotent contract:
+
+- `PUT /api/posts/:postId/comments/:commentId/like` likes a comment.
+- `DELETE /api/posts/:postId/comments/:commentId/like` removes the current user's like.
+
+Both return `{ "liked": boolean, "likeCount": number }`. Comment responses include the total as `_count.likes`.
+
 Stop the services without deleting their data:
 
 ```sh
