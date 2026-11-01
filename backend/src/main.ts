@@ -19,6 +19,16 @@ app.use("/api", (_req, res) => {
 
 // Express 5 forwards errors thrown in async handlers here.
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  // express.json() reports bad request bodies (malformed JSON, too large, unsupported charset) with a 4xx status.
+  // Those are the client's mistake, so pass the status through instead of a 500.
+  const { status, type } = err as { status?: unknown; type?: unknown };
+  if (typeof status === "number" && status >= 400 && status < 500) {
+    const error =
+      type === "entity.parse.failed" ? "Request body must be valid JSON"
+      : type === "entity.too.large" ? "Request body is too large"
+      : "Request body could not be read";
+    return res.status(status).json({ error });
+  }
   console.error(err);
   res.status(500).json({ error: "Internal server error" });
 });
