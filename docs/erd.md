@@ -1,6 +1,6 @@
 # Database ERD
 
-Generated from [backend/prisma/schema.prisma](../backend/prisma/schema.prisma), including the `comment_depth`, `post_public_id`, and `votes` migrations.
+Generated from [backend/prisma/schema.prisma](../backend/prisma/schema.prisma), including the `comment_depth` and `post_public_id` migrations.
 
 ```mermaid
 erDiagram
@@ -15,10 +15,10 @@ erDiagram
     posts ||--o{ comments : "has"
     users ||--o{ comments : "writes"
     comments |o--o{ comments : "parent of"
-    posts ||--o{ post_votes : "receives"
-    users ||--o{ post_votes : "casts"
-    comments ||--o{ comment_votes : "receives"
-    users ||--o{ comment_votes : "casts"
+    posts ||--o{ post_likes : "receives"
+    users ||--o{ post_likes : "gives"
+    comments ||--o{ comment_likes : "receives"
+    users ||--o{ comment_likes : "gives"
     users ||--o{ media_objects : "owns"
     media_objects |o--o{ users : "avatar for"
     posts ||--o{ post_media : "attaches"
@@ -80,7 +80,6 @@ erDiagram
         varchar title "max 300"
         text body "nullable, required for text posts"
         text external_url "nullable, required for link posts, null for text posts"
-        int score "default 0, sum of post_votes.value, kept by trigger"
         timestamptz created_at
         timestamptz updated_at
         timestamptz deleted_at "nullable"
@@ -93,23 +92,20 @@ erDiagram
         uuid parent_id FK "nullable, same post as parent"
         text body "nullable only if deleted"
         int depth "default 0, >= 0"
-        int score "default 0, sum of comment_votes.value, kept by trigger"
         timestamptz created_at
         timestamptz updated_at
         timestamptz deleted_at "nullable"
     }
 
-    post_votes {
+    post_likes {
         uuid post_id PK, FK "CASCADE"
         uuid user_id PK, FK "CASCADE"
-        smallint value "1 (up) or -1 (down)"
         timestamptz created_at
     }
 
-    comment_votes {
+    comment_likes {
         uuid comment_id PK, FK "CASCADE"
         uuid user_id PK, FK "CASCADE"
-        smallint value "1 (up) or -1 (down)"
         timestamptz created_at
     }
 
@@ -141,4 +137,3 @@ erDiagram
 - **`posts.id` vs `posts.public_id`:** `id` is the internal key. Other tables use it for their foreign keys. `public_id` is the short ID that the API and URLs use (for example, `/api/posts/R14SZSWA4B69`).
 - **`comments.depth`:** a comment on a post has depth 0. A reply has the depth of its parent plus 1. The API uses `parent_id` to send comments as a tree.
 - **Post type rules:** these apply only while `deleted_at` is null. Media posts have no body or URL rules.
-- **`score`:** triggers on `post_votes` and `comment_votes` update `posts.score` and `comments.score` whenever a vote is added, changed, or removed. The `votes` migration renamed `post_likes` and `comment_likes`, and turned every existing like into an upvote.
