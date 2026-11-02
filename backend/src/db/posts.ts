@@ -2,11 +2,36 @@ import { randomUUID } from "node:crypto";
 import type { PostType } from "../generated/prisma/enums.js";
 import { Prisma } from "../generated/prisma/client.js";
 import { prisma } from "./client.js";
+import { findAttachableMediaIds } from "./media.js";
 import { generatePublicId } from "./publicId.js";
 
 const withPostDetails = {
   author: { select: { username: true } },
+  media: {
+    orderBy: { position: "asc" },
+    select: {
+      position: true,
+      media: {
+        select: {
+          id: true,
+          objectKey: true,
+          mimeType: true,
+          sizeBytes: true,
+          width: true,
+          height: true,
+          durationSeconds: true,
+        },
+      },
+    },
+  },
 } as const;
+
+// Thrown by createPost when a media ID can't be attached, e.g. another post claimed it first.
+export class MediaUnavailableError extends Error {
+  constructor() {
+    super("Media is not available to attach");
+  }
+}
 
 const withCommentDetails = {
   author: { select: { username: true } },
@@ -24,6 +49,8 @@ export interface CreatePostInput {
   title: string;
   body?: string;
   externalUrl?: string;
+  // Ready media owned by the author, in display order.
+  mediaIds?: string[];
 }
 
 function beforeCursor(cursor?: PageCursor) {
@@ -36,17 +63,31 @@ function beforeCursor(cursor?: PageCursor) {
   };
 }
 
+// The post and its media links are written together, so a post never ends up half-attached.
+// Throws MediaUnavailableError if a media ID can't be attached.
 export async function createPost(input: CreatePostInput) {
+  const { mediaIds = [], ...post } = input;
   // A public ID collision is astronomically unlikely, but retry on one rather than fail the request.
   for (let attempt = 1; ; attempt++) {
     try {
       return await prisma.post.create({
-        data: { id: randomUUID(), publicId: generatePublicId(), ...input },
+        data: {
+          id: randomUUID(),
+          publicId: generatePublicId(),
+          ...post,
+          media: { create: mediaIds.map((mediaId, position) => ({ mediaId, position })) },
+        },
         include: withPostDetails,
       });
     } catch (err) {
-      const collided = err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
-      if (!collided || attempt === 3) throw err;
+      const code = err instanceof Prisma.PrismaClientKnownRequestError ? err.code : undefined;
+      // P2002 is a duplicate key, P2003 a missing foreign key row.
+      if (code !== "P2002" && code !== "P2003") throw err;
+      // Either can come from post_media: media that another post just claimed, or that cleanup just deleted.
+      if (mediaIds.length && (await findAttachableMediaIds(mediaIds, post.authorId)).size < mediaIds.length) {
+        throw new MediaUnavailableError();
+      }
+      if (code !== "P2002" || attempt === 3) throw err;
     }
   }
 }
@@ -104,12 +145,17 @@ export async function updatePost(
   });
 }
 
+// Soft-deletes the post and detaches its media, so the files can be deleted from storage.
 export async function deletePost(id: string, authorId: string): Promise<boolean> {
-  const result = await prisma.post.updateMany({
-    where: { id, authorId, deletedAt: null },
-    data: { body: null, externalUrl: null, deletedAt: new Date(), updatedAt: new Date() },
+  return prisma.$transaction(async (transaction) => {
+    const result = await transaction.post.updateMany({
+      where: { id, authorId, deletedAt: null },
+      data: { body: null, externalUrl: null, deletedAt: new Date(), updatedAt: new Date() },
+    });
+    if (result.count !== 1) return false;
+    await transaction.postMedia.deleteMany({ where: { postId: id } });
+    return true;
   });
-  return result.count === 1;
 }
 
 // Returns null when parentId is given but no such comment exists on this post, or it was deleted.
