@@ -64,16 +64,6 @@ Run the authentication unit tests (no database required):
 npm --prefix backend run test:auth
 ```
 
-## Running the app
-
-With PostgreSQL and object storage running and the migrations applied, start the API server:
-
-```sh
-npm --prefix backend run dev
-```
-
-The server also serves the frontend. Open <http://localhost:3000> to use the site. The API is under <http://localhost:3000/api>.
-
 ## API authentication
 
 Authentication uses opaque 30-day sessions. The raw token is returned once by registration or login; the database stores only its SHA-256 hash. Send it on protected requests as `Authorization: Bearer <token>`.
@@ -85,21 +75,19 @@ Authentication uses opaque 30-day sessions. The raw token is returned once by re
 
 Creating, editing, or deleting posts and creating comments requires a bearer token. The authenticated user's ID is always used as the author; client-supplied author IDs are ignored. Post responses include both the stable `authorId` ownership key and `author.username` for display.
 
-## Voting
+Post likes are authenticated and idempotent:
 
-Posts and comments can be upvoted or downvoted. Voting requires a bearer token, and sending the same vote twice changes nothing.
+- `PUT /api/posts/:postId/like` likes a post.
+- `DELETE /api/posts/:postId/like` removes the current user's like.
 
-- `PUT /api/posts/:postId/vote` with `{ "value": 1 }` (upvote) or `{ "value": -1 }` (downvote) votes on a post. Sending the other value switches the vote.
-- `DELETE /api/posts/:postId/vote` removes the current user's vote.
-- `PUT` and `DELETE /api/posts/:postId/comments/:commentId/vote` do the same for a comment.
+Both endpoints return `{ "liked": boolean, "likeCount": number }`. Post responses also include the total as `_count.likes`.
 
-All four return `{ "score": number, "viewerVote": 1 | 0 | -1 }`. Post and comment responses include the same two fields: `score` is the total of all votes, and `viewerVote` is the current user's vote, which is `0` if they haven't voted or aren't logged in.
+Comment likes follow the same authenticated, idempotent contract:
 
-Reading posts, comments, and community feeds doesn't require a login. A token that is sent must still be valid.
+- `PUT /api/posts/:postId/comments/:commentId/like` likes a comment.
+- `DELETE /api/posts/:postId/comments/:commentId/like` removes the current user's like.
 
-## Communities
-
-- `GET /api/communities` lists public communities, with their member counts as `_count.memberships`.
+Both return `{ "liked": boolean, "likeCount": number }`. Comment responses include the total as `_count.likes`.
 
 ## Managing posts and comments
 
