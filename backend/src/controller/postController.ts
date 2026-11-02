@@ -5,6 +5,7 @@
 import type { Request, Response } from "express";
 import * as db from "../db/index.js";
 import * as postService from "../services/postService.js";
+import * as mediaService from "../services/mediaService.js";
 import { authenticatedUser } from "../middleware/auth.js";
 
 const POST_TYPES = ["text", "link", "media"] as const;
@@ -43,6 +44,37 @@ function readPage(req: Request, res: Response) {
   return { limit, cursor };
 }
 
+// Sends one page of a feed, with the viewer's vote on each post and signed URLs for each post's media.
+async function sendPage(
+  res: Response,
+  posts: Awaited<ReturnType<typeof db.listCommunityPosts>>,
+  limit: number,
+  viewerId?: string,
+) {
+  const page = postService.postPage(await postService.withViewerVotes(posts, viewerId), limit);
+  res.json({ ...page, posts: await Promise.all(page.posts.map((post) => mediaService.withMediaUrls(post))) });
+}
+
+// Reads mediaIds for a new post. Sends a 400 and returns null if they're invalid.
+function readMediaIds(req: Request, res: Response, postType: string): string[] | null {
+  const { mediaIds } = req.body ?? {};
+  if (postType !== "media") {
+    if (mediaIds === undefined || (Array.isArray(mediaIds) && mediaIds.length === 0)) return [];
+    res.status(400).json({ error: "Only media posts can have mediaIds" });
+    return null;
+  }
+  const max = mediaService.MAX_MEDIA_PER_POST;
+  if (!Array.isArray(mediaIds) || mediaIds.length < 1 || mediaIds.length > max) {
+    res.status(400).json({ error: `Media posts need mediaIds: 1-${max} uploaded media IDs` });
+    return null;
+  }
+  if (!mediaIds.every(postService.isUuid) || new Set(mediaIds).size !== mediaIds.length) {
+    res.status(400).json({ error: "mediaIds must be distinct media IDs" });
+    return null;
+  }
+  return mediaIds;
+}
+
 // :postId in URLs is the post's short public ID. Sends a 404 and returns null if there's no such post.
 async function findPost(req: Request<{ postId: string }>, res: Response) {
   const publicId = db.normalizePublicId(req.params.postId);
@@ -58,10 +90,11 @@ export async function getPost(req: Request<{ postId: string }>, res: Response) {
   const post = await findPost(req, res);
   if (!post) return;
   const [withVote] = await postService.withViewerVotes([post], req.auth?.user.id);
-  res.json(withVote);
+  res.json(await mediaService.withMediaUrls(withVote!));
 }
 
 //POST /api/posts
+// Media posts take mediaIds: uploads from POST /api/media that have been completed, in display order.
 export async function createPost(req: Request, res: Response) {
   const authorId = authenticatedUser(req).id;
 
@@ -85,19 +118,33 @@ export async function createPost(req: Request, res: Response) {
   if (error) {
     return res.status(400).json({ error });
   }
+  const mediaIds = readMediaIds(req, res, postType);
+  if (!mediaIds) return;
   if (!(await db.getCommunityById(communityId))) {
     return res.status(404).json({ error: "Community not found" });
   }
+  const mediaError = mediaIds.length ? await mediaService.checkAttachable(mediaIds, authorId) : null;
+  if (mediaError) {
+    return res.status(409).json({ error: mediaError });
+  }
 
-  const post = await db.createPost({
-    authorId,
-    communityId,
-    postType,
-    title: content.title,
-    body: content.body ?? undefined,
-    externalUrl: content.externalUrl ?? undefined,
-  });
-  res.status(201).json(post);
+  try {
+    const post = await db.createPost({
+      authorId,
+      communityId,
+      postType,
+      title: content.title,
+      body: content.body ?? undefined,
+      externalUrl: content.externalUrl ?? undefined,
+      mediaIds,
+    });
+    res.status(201).json(await mediaService.withMediaUrls(post));
+  } catch (err) {
+    if (err instanceof db.MediaUnavailableError) {
+      return res.status(409).json({ error: "Some of that media was just attached to another post" });
+    }
+    throw err;
+  }
 }
 
 //PATCH /api/posts/:postId
@@ -136,7 +183,7 @@ export async function updatePost(req: Request<{ postId: string }>, res: Response
   if (!post) {
     return res.status(403).json({ error: "You are not the author of this post" });
   }
-  res.json(post);
+  res.json(await mediaService.withMediaUrls(post));
 }
 
 //DELETE /api/posts/:postId
@@ -150,6 +197,8 @@ export async function deletePost(req: Request<{ postId: string }>, res: Response
   if (!deleted) {
     return res.status(403).json({ error: "You are not the author of this post" });
   }
+  // The post's files go too: from storage and from the database.
+  await mediaService.purgeMedia(post.media.map(({ media }) => media));
   res.status(204).end();
 }
 
@@ -160,8 +209,7 @@ export async function homeFeed(req: Request, res: Response) {
   const page = readPage(req, res);
   if (!page) return;
 
-  const posts = await db.listHomeFeed(userId, page.limit, page.cursor);
-  res.json(postService.postPage(await postService.withViewerVotes(posts, userId), page.limit));
+  await sendPage(res, await db.listHomeFeed(userId, page.limit, page.cursor), page.limit, userId);
 }
 
 //GET /api/communities/:communityId/posts
@@ -173,9 +221,7 @@ export async function communityFeed(req: Request<{ communityId: string }>, res: 
   const page = readPage(req, res);
   if (!page) return;
 
-  const posts = await db.listCommunityPosts(communityId, page.limit, page.cursor);
-  const withVotes = await postService.withViewerVotes(posts, req.auth?.user.id);
-  res.json(postService.postPage(withVotes, page.limit));
+  await sendPage(res, await db.listCommunityPosts(communityId, page.limit, page.cursor), page.limit, req.auth?.user.id);
 }
 
 // PUT /api/posts/:postId/vote

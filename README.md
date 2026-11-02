@@ -112,6 +112,53 @@ Run the post validation unit tests (no database required):
 npm --prefix backend run test:posts
 ```
 
+## Media uploads
+
+Videos and images are uploaded straight to object storage, not through the API. Uploading is three requests, all authenticated except the `PUT`:
+
+1. `POST /api/media` with `mimeType` and `sizeBytes`. Allowed types are `video/mp4`, `video/webm`, and `video/quicktime` (up to 500 MB), and `image/jpeg`, `image/png`, `image/gif`, and `image/webp` (up to 20 MB). The response has the new `media` (status `pending`) and an `upload` object with a `url`, `method`, and `headers`.
+2. `PUT` the file to `upload.url` with the given `Content-Type` header. The URL expires after 15 minutes and only accepts a file of the declared type and size.
+3. `POST /api/media/:mediaId/complete`. The API checks the stored file and marks the media `ready`. If the file isn't there yet it returns `409`, and the client can retry. If the file fails a check it returns `422` with the reason, deletes the file, and marks the media `failed`.
+
+The checks on step 3 don't trust the client:
+
+- The stored size and type must match what was declared.
+- The contents are read with [ffprobe](https://ffmpeg.org/ffprobe.html) to confirm the file really is the declared type. For example, a PNG renamed to `.mp4`, an MKV declared as WebM, or an MP4 with only audio is rejected.
+- Videos and images can be at most 7680x4320 (8K, either orientation), and videos at most 2 hours long.
+- ffprobe also provides `width`, `height`, and `durationSeconds`. Rotated phone videos report the size people see.
+
+ffprobe comes with the `@ffprobe-installer/ffprobe` package. Set `FFPROBE_PATH` to use a different one. Animated WebP is checked from its file header, because the bundled ffprobe can't decode it. A video that doesn't state its length (some browser recordings) is accepted with a `null` duration.
+
+`GET /api/media/:mediaId` returns your own upload, including its `uploadStatus` and the `postId` it's attached to.
+
+To post media, create a post with `postType: "media"` and `mediaIds`: 1-4 of your `ready` media IDs, in display order. Each media item can be on only one post. Other post types can't have media.
+
+Post and feed responses include `media`: an array of `{ id, mimeType, sizeBytes, width, height, durationSeconds, url }`. Each `url` is a signed link to the file that expires after an hour, so fetch the post again for a fresh one.
+
+Deleting a post also deletes its media files from storage.
+
+### Cleaning up abandoned uploads
+
+The API server deletes abandoned uploads every 15 minutes (`MEDIA_CLEANUP_INTERVAL_MINUTES`, `0` to turn it off). This covers:
+
+- uploads that were never completed, after an hour
+- failed uploads, after an hour
+- completed uploads that never went on a post, after a day
+
+Media used as an avatar is never removed. To run the cleanup once, for example from cron:
+
+```sh
+npm --prefix backend run media:cleanup
+```
+
+Storage settings come from `.env`. `S3_ENDPOINT` is where the API reaches storage, and `S3_PUBLIC_ENDPOINT` is the address browsers use for upload and view URLs. Both default to `http://localhost:$S3_PORT`.
+
+Run the upload validation unit tests (no database, storage, or ffprobe required):
+
+```sh
+npm --prefix backend run test:media
+```
+
 Stop the services without deleting their data:
 
 ```sh
