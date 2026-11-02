@@ -57,7 +57,8 @@ async function findPost(req: Request<{ postId: string }>, res: Response) {
 export async function getPost(req: Request<{ postId: string }>, res: Response) {
   const post = await findPost(req, res);
   if (!post) return;
-  res.json(post);
+  const [withVote] = await postService.withViewerVotes([post], req.auth?.user.id);
+  res.json(withVote);
 }
 
 //POST /api/posts
@@ -160,7 +161,7 @@ export async function homeFeed(req: Request, res: Response) {
   if (!page) return;
 
   const posts = await db.listHomeFeed(userId, page.limit, page.cursor);
-  res.json(postService.postPage(posts, page.limit));
+  res.json(postService.postPage(await postService.withViewerVotes(posts, userId), page.limit));
 }
 
 //GET /api/communities/:communityId/posts
@@ -173,34 +174,39 @@ export async function communityFeed(req: Request<{ communityId: string }>, res: 
   if (!page) return;
 
   const posts = await db.listCommunityPosts(communityId, page.limit, page.cursor);
-  res.json(postService.postPage(posts, page.limit));
+  const withVotes = await postService.withViewerVotes(posts, req.auth?.user.id);
+  res.json(postService.postPage(withVotes, page.limit));
 }
 
-// PUT /api/posts/:postId/like
-export async function likePost(req: Request<{ postId: string }>, res: Response) {
+// PUT /api/posts/:postId/vote
+export async function votePost(req: Request<{ postId: string }>, res: Response) {
+  const userId = authenticatedUser(req).id;
+  const { value } = req.body ?? {};
+  if (!postService.isVote(value)) {
+    return res.status(400).json({ error: "value must be 1 or -1" });
+  }
+  const post = await findPost(req, res);
+  if (!post) return;
+
+  await db.setPostVote(post.id, userId, value);
+  res.json(await db.getPostVoteSummary(post.id, userId));
+}
+
+// DELETE /api/posts/:postId/vote
+export async function unvotePost(req: Request<{ postId: string }>, res: Response) {
   const userId = authenticatedUser(req).id;
   const post = await findPost(req, res);
   if (!post) return;
 
-  await db.setPostLiked(post.id, userId, true);
-  res.json(await db.getPostLikeSummary(post.id, userId));
-}
-
-// DELETE /api/posts/:postId/like
-export async function unlikePost(req: Request<{ postId: string }>, res: Response) {
-  const userId = authenticatedUser(req).id;
-  const post = await findPost(req, res);
-  if (!post) return;
-
-  await db.setPostLiked(post.id, userId, false);
-  res.json(await db.getPostLikeSummary(post.id, userId));
+  await db.setPostVote(post.id, userId, 0);
+  res.json(await db.getPostVoteSummary(post.id, userId));
 }
 
 //GET /api/posts/:postId/comments
 export async function listComments(req: Request<{ postId: string }>, res: Response) {
   const post = await findPost(req, res);
   if (!post) return;
-  res.json(await postService.listCommentThreads(post.id));
+  res.json(await postService.listCommentThreads(post.id, req.auth?.user.id));
 }
 
 //POST /api/posts/:postId/comments
@@ -276,21 +282,25 @@ export async function deleteComment(
   res.status(204).end();
 }
 
-// PUT /api/posts/:postId/comments/:commentId/like
-export async function likeComment(
+// PUT /api/posts/:postId/comments/:commentId/vote
+export async function voteComment(
   req: Request<{ postId: string; commentId: string }>,
   res: Response,
 ) {
   const userId = authenticatedUser(req).id;
+  const { value } = req.body ?? {};
+  if (!postService.isVote(value)) {
+    return res.status(400).json({ error: "value must be 1 or -1" });
+  }
   const comment = await findComment(req, res);
   if (!comment) return;
 
-  await db.setCommentLiked(comment.id, userId, true);
-  res.json(await db.getCommentLikeSummary(comment.id, userId));
+  await db.setCommentVote(comment.id, userId, value);
+  res.json(await db.getCommentVoteSummary(comment.id, userId));
 }
 
-// DELETE /api/posts/:postId/comments/:commentId/like
-export async function unlikeComment(
+// DELETE /api/posts/:postId/comments/:commentId/vote
+export async function unvoteComment(
   req: Request<{ postId: string; commentId: string }>,
   res: Response,
 ) {
@@ -298,6 +308,6 @@ export async function unlikeComment(
   const comment = await findComment(req, res);
   if (!comment) return;
 
-  await db.setCommentLiked(comment.id, userId, false);
-  res.json(await db.getCommentLikeSummary(comment.id, userId));
+  await db.setCommentVote(comment.id, userId, 0);
+  res.json(await db.getCommentVoteSummary(comment.id, userId));
 }

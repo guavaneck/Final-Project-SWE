@@ -140,6 +140,7 @@ button.full { width: 100%; margin-top: 8px; }
 }
 
 .votes button.on { color: var(--accent); }
+.votes.inline { flex-direction: row; min-width: 0; gap: 2px; }
 
 .post h2 {
   margin: 2px 0 6px;
@@ -175,6 +176,8 @@ label {
 }
 
 input[type="text"],
+input[type="email"],
+input[type="password"],
 textarea,
 select {
   width: 100%;
@@ -207,3 +210,4 @@ textarea { min-height: 90px; resize: vertical; }
 .avatar.lg { width: 64px; height: 64px; font-size: 26px; }
 
 .empty { padding: 24px; text-align: center; color: var(--muted); }
+.error { color: var(--danger); }

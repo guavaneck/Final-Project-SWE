@@ -1,5 +1,7 @@
 import { prisma } from "./client.js";
 
+export type VoteValue = -1 | 0 | 1;
+
 export async function followUser(followerId: string, followedId: string): Promise<void> {
   await prisma.userFollow.upsert({
     where: { followerId_followedId: { followerId, followedId } },
@@ -13,52 +15,72 @@ export async function unfollowUser(followerId: string, followedId: string): Prom
   return result.count === 1;
 }
 
-export async function setPostLiked(postId: string, userId: string, liked: boolean): Promise<void> {
-  if (liked) {
-    await prisma.postLike.upsert({
-      where: { postId_userId: { postId, userId } },
-      create: { postId, userId },
-      update: {},
-    });
+// 0 removes the user's vote.
+export async function setPostVote(postId: string, userId: string, value: VoteValue): Promise<void> {
+  if (value === 0) {
+    await prisma.postVote.deleteMany({ where: { postId, userId } });
   } else {
-    await prisma.postLike.deleteMany({ where: { postId, userId } });
+    await prisma.postVote.upsert({
+      where: { postId_userId: { postId, userId } },
+      create: { postId, userId, value },
+      update: { value },
+    });
   }
 }
 
-export async function getPostLikeSummary(postId: string, userId: string) {
-  const [likeCount, viewerLike] = await prisma.$transaction([
-    prisma.postLike.count({ where: { postId } }),
-    prisma.postLike.findUnique({
+export async function getPostVoteSummary(postId: string, userId: string) {
+  const [post, vote] = await prisma.$transaction([
+    prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { score: true } }),
+    prisma.postVote.findUnique({
       where: { postId_userId: { postId, userId } },
-      select: { postId: true },
+      select: { value: true },
     }),
   ]);
-  return { liked: viewerLike !== null, likeCount };
+  return { score: post.score, viewerVote: vote?.value ?? 0 };
 }
 
-export async function setCommentLiked(
+export async function getPostVotes(userId: string, postIds: string[]): Promise<Map<string, number>> {
+  const votes = await prisma.postVote.findMany({
+    where: { userId, postId: { in: postIds } },
+    select: { postId: true, value: true },
+  });
+  return new Map(votes.map((v) => [v.postId, v.value]));
+}
+
+export async function setCommentVote(
   commentId: string,
   userId: string,
-  liked: boolean,
+  value: VoteValue,
 ): Promise<void> {
-  if (liked) {
-    await prisma.commentLike.upsert({
-      where: { commentId_userId: { commentId, userId } },
-      create: { commentId, userId },
-      update: {},
-    });
+  if (value === 0) {
+    await prisma.commentVote.deleteMany({ where: { commentId, userId } });
   } else {
-    await prisma.commentLike.deleteMany({ where: { commentId, userId } });
+    await prisma.commentVote.upsert({
+      where: { commentId_userId: { commentId, userId } },
+      create: { commentId, userId, value },
+      update: { value },
+    });
   }
 }
 
-export async function getCommentLikeSummary(commentId: string, userId: string) {
-  const [likeCount, viewerLike] = await prisma.$transaction([
-    prisma.commentLike.count({ where: { commentId } }),
-    prisma.commentLike.findUnique({
+export async function getCommentVoteSummary(commentId: string, userId: string) {
+  const [comment, vote] = await prisma.$transaction([
+    prisma.comment.findUniqueOrThrow({ where: { id: commentId }, select: { score: true } }),
+    prisma.commentVote.findUnique({
       where: { commentId_userId: { commentId, userId } },
-      select: { commentId: true },
+      select: { value: true },
     }),
   ]);
-  return { liked: viewerLike !== null, likeCount };
+  return { score: comment.score, viewerVote: vote?.value ?? 0 };
+}
+
+export async function getCommentVotes(
+  userId: string,
+  commentIds: string[],
+): Promise<Map<string, number>> {
+  const votes = await prisma.commentVote.findMany({
+    where: { userId, commentId: { in: commentIds } },
+    select: { commentId: true, value: true },
+  });
+  return new Map(votes.map((v) => [v.commentId, v.value]));
 }

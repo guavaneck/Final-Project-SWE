@@ -12,8 +12,9 @@
     <span class="logo" onclick="go('home')">Forum</span>
     <input id="q" type="search" placeholder="Search posts…" oninput="render()">
     <span class="spacer"></span>
-    <button class="primary" onclick="go('newPost')">+ Post</button>
+    <button id="newPostBtn" class="primary" onclick="go('newPost')">+ Post</button>
     <button id="userBtn" onclick="go('profile')"></button>
+    <button id="logoutBtn" onclick="logout()">Log out</button>
   </header>
 
   <div class="layout">
@@ -25,7 +26,7 @@
       <div class="card">
         <h3>Communities</h3>
         <div id="communities"></div>
-        <button class="full" onclick="go('newCommunity')">+ Create community</button>
+        <button id="newCommunityBtn" class="full" onclick="go('newCommunity')">+ Create community</button>
       </div>
     </aside>
 

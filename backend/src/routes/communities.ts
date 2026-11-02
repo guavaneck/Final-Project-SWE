@@ -3,9 +3,12 @@
 
 import { Router } from "express";
 import * as posts from "../controller/postController.js";
+import * as communities from "../controller/communityController.js";
+import { optionalAuth } from "../middleware/auth.js";
 
 const router = Router();
 
-router.get("/:communityId/posts", posts.communityFeed);
+router.get("/", communities.listCommunities);
+router.get("/:communityId/posts", optionalAuth, posts.communityFeed);
 
 export default router;
