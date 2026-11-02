@@ -69,16 +69,29 @@ export function postPage<T extends db.PageCursor>(posts: T[], limit: number) {
   return { posts, nextCursor: posts.length === limit && last ? encodeCursor(last) : null };
 }
 
+export function isVote(value: unknown): value is 1 | -1 {
+  return value === 1 || value === -1;
+}
+
+// Adds viewerVote (1, -1, or 0) to each post. Anonymous viewers get 0 everywhere.
+export async function withViewerVotes<T extends { id: string }>(posts: T[], viewerId?: string) {
+  const votes = viewerId ? await db.getPostVotes(viewerId, posts.map((p) => p.id)) : new Map<string, number>();
+  return posts.map((post) => ({ ...post, viewerVote: votes.get(post.id) ?? 0 }));
+}
+
 type Comment = Awaited<ReturnType<typeof db.listComments>>[number];
-export type CommentThread = Comment & { replies: CommentThread[] };
+export type CommentThread = Comment & { viewerVote: number; replies: CommentThread[] };
 
 // Returns a post's comments as a tree: top-level comments, each with its replies nested under `replies`.
 // Siblings stay oldest first, the order listComments returns them in.
-export async function listCommentThreads(postId: string): Promise<CommentThread[]> {
+export async function listCommentThreads(postId: string, viewerId?: string): Promise<CommentThread[]> {
   const comments = await db.listComments(postId);
+  const votes = viewerId
+    ? await db.getCommentVotes(viewerId, comments.map((c) => c.id))
+    : new Map<string, number>();
   const byId = new Map<string, CommentThread>();
   for (const comment of comments) {
-    byId.set(comment.id, { ...comment, replies: [] });
+    byId.set(comment.id, { ...comment, viewerVote: votes.get(comment.id) ?? 0, replies: [] });
   }
 
   const roots: CommentThread[] = [];

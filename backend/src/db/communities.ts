@@ -22,6 +22,14 @@ export function createCommunity(input: CreateCommunityInput) {
   });
 }
 
+export function listPublicCommunities() {
+  return prisma.community.findMany({
+    where: { visibility: "public" },
+    include: { _count: { select: { memberships: true } } },
+    orderBy: { name: "asc" },
+  });
+}
+
 export function getCommunityById(id: string) {
   return prisma.community.findUnique({ where: { id } });
 }
