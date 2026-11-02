@@ -6,12 +6,10 @@ import { generatePublicId } from "./publicId.js";
 
 const withPostDetails = {
   author: { select: { username: true } },
-  _count: { select: { likes: true } },
 } as const;
 
 const withCommentDetails = {
   author: { select: { username: true } },
-  _count: { select: { likes: true } },
 } as const;
 
 export interface PageCursor {

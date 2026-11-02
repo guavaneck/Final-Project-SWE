@@ -1,6 +1,7 @@
 // Entry point for the backend: creates the app, plugs in the routers from routes/, and starts the server.
 // Belongs here: app setup and listen(), e.g. registering the posts router under /api/posts. No business logic.
 
+import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 import postsRouter from "./routes/posts.js";
 import authRouter from "./routes/auth.js";
@@ -8,8 +9,13 @@ import communitiesRouter from "./routes/communities.js";
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
+const frontendDir = path.resolve(import.meta.dirname, "../../frontend/src");
 
 app.use(express.json());
+app.use("/frontend/src", express.static(frontendDir));
+app.get("/", (_req, res) => {
+  res.sendFile(path.join(frontendDir, "index.html"));
+});
 
 app.use("/api/auth", authRouter);
 app.use("/api/posts", postsRouter);

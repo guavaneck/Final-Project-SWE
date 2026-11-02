@@ -3,25 +3,25 @@
 
 import { Router } from "express";
 import * as posts from "../controller/postController.js";
-import { requireAuth } from "../middleware/auth.js";
+import { optionalAuth, requireAuth } from "../middleware/auth.js";
 
 const router = Router();
 
 // Before /:postId, which would otherwise match "feed".
 router.get("/feed", requireAuth, posts.homeFeed);
 
-router.get("/:postId", posts.getPost);
+router.get("/:postId", optionalAuth, posts.getPost);
 router.post("/", requireAuth, posts.createPost);
 router.patch("/:postId", requireAuth, posts.updatePost);
 router.delete("/:postId", requireAuth, posts.deletePost);
-router.put("/:postId/like", requireAuth, posts.likePost);
-router.delete("/:postId/like", requireAuth, posts.unlikePost);
+router.put("/:postId/vote", requireAuth, posts.votePost);
+router.delete("/:postId/vote", requireAuth, posts.unvotePost);
 
-router.get("/:postId/comments", posts.listComments);
+router.get("/:postId/comments", optionalAuth, posts.listComments);
 router.post("/:postId/comments", requireAuth, posts.createComment);
 router.patch("/:postId/comments/:commentId", requireAuth, posts.updateComment);
 router.delete("/:postId/comments/:commentId", requireAuth, posts.deleteComment);
-router.put("/:postId/comments/:commentId/like", requireAuth, posts.likeComment);
-router.delete("/:postId/comments/:commentId/like", requireAuth, posts.unlikeComment);
+router.put("/:postId/comments/:commentId/vote", requireAuth, posts.voteComment);
+router.delete("/:postId/comments/:commentId/vote", requireAuth, posts.unvoteComment);
 
 export default router;

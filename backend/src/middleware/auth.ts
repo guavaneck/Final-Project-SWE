@@ -30,6 +30,12 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   next();
 }
 
+// For public routes: anonymous requests pass through, but a token that is sent must be valid.
+export async function optionalAuth(req: Request, res: Response, next: NextFunction) {
+  if (!req.header("authorization")) return next();
+  return requireAuth(req, res, next);
+}
+
 export function authenticatedUser(req: Request) {
   if (!req.auth) throw new Error("requireAuth must run before this handler");
   return req.auth.user;
