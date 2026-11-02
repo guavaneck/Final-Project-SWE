@@ -57,8 +57,8 @@ model User {
   mediaObjects   MediaObject[] @relation("MediaOwner")
   posts          Post[]
   sessions       Session[]
-  postLikes      PostLike[]
-  commentLikes   CommentLike[]
+  postVotes      PostVote[]
+  commentVotes   CommentVote[]
   following      UserFollow[]  @relation("Follower")
   followers      UserFollow[]  @relation("Followed")
 
@@ -128,13 +128,14 @@ model Post {
   title       String    @db.VarChar(300)
   body        String?
   externalUrl String?   @map("external_url")
+  score       Int       @default(0)
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime  @default(now()) @map("updated_at") @db.Timestamptz
   deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
   author      User      @relation(fields: [authorId], references: [id])
   community   Community @relation(fields: [communityId], references: [id])
   comments    Comment[]
-  likes       PostLike[]
+  votes       PostVote[]
   media       PostMedia[]
 
   @@index([communityId, createdAt(sort: Desc), id(sort: Desc)])
@@ -149,6 +150,7 @@ model Comment {
   parentId  String?   @map("parent_id") @db.Uuid
   body      String?
   depth     Int       @default(0)
+  score     Int       @default(0)
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime  @default(now()) @map("updated_at") @db.Timestamptz
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz
@@ -156,7 +158,7 @@ model Comment {
   post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
   parent    Comment?  @relation("CommentReplies", fields: [parentId, postId], references: [id, postId])
   replies   Comment[] @relation("CommentReplies")
-  likes     CommentLike[]
+  votes     CommentVote[]
 
   @@unique([id, postId])
   @@index([postId, createdAt, id])
@@ -164,28 +166,31 @@ model Comment {
   @@map("comments")
 }
 
-model PostLike {
+// value is 1 (upvote) or -1 (downvote). A trigger keeps posts.score equal to the sum of its votes.
+model PostVote {
   postId    String   @map("post_id") @db.Uuid
   userId    String   @map("user_id") @db.Uuid
+  value     Int      @db.SmallInt
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([postId, userId])
   @@index([userId])
-  @@map("post_likes")
+  @@map("post_votes")
 }
 
-model CommentLike {
+model CommentVote {
   commentId String   @map("comment_id") @db.Uuid
   userId    String   @map("user_id") @db.Uuid
+  value     Int      @db.SmallInt
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([commentId, userId])
   @@index([userId])
-  @@map("comment_likes")
+  @@map("comment_votes")
 }
 
 model MediaObject {

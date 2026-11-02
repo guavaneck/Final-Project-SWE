@@ -9,16 +9,17 @@ import {
   deleteComment,
   deletePost,
   followUser,
-  getPostLikeSummary,
+  getPostVoteSummary,
+  getPostVotes,
   getPostById,
   getPostByPublicId,
-  getCommentLikeSummary,
+  getCommentVoteSummary,
   joinCommunity,
   listCommunityPosts,
   listHomeFeed,
   prisma,
-  setPostLiked,
-  setCommentLiked,
+  setPostVote,
+  setCommentVote,
   updateComment,
   updatePost,
 } from "../src/db/index.js";
@@ -72,16 +73,14 @@ test("core social database functions", async () => {
   const comment = await createComment(post.id, bob.id, "First reply");
   assert.equal(comment?.depth, 0);
   assert.ok(comment);
-  await setCommentLiked(comment.id, alice.id, true);
-  assert.deepEqual(await getCommentLikeSummary(comment.id, alice.id), {
-    liked: true,
-    likeCount: 1,
-  });
-  await setCommentLiked(comment.id, alice.id, false);
-  assert.deepEqual(await getCommentLikeSummary(comment.id, alice.id), {
-    liked: false,
-    likeCount: 0,
-  });
+  await setCommentVote(comment.id, alice.id, 1);
+  assert.deepEqual(await getCommentVoteSummary(comment.id, alice.id), { score: 1, viewerVote: 1 });
+  await setCommentVote(comment.id, bob.id, -1);
+  await setCommentVote(comment.id, alice.id, -1);
+  assert.deepEqual(await getCommentVoteSummary(comment.id, alice.id), { score: -2, viewerVote: -1 });
+  await setCommentVote(comment.id, alice.id, 0);
+  await setCommentVote(comment.id, bob.id, 0);
+  assert.deepEqual(await getCommentVoteSummary(comment.id, alice.id), { score: 0, viewerVote: 0 });
   const reply = await createComment(post.id, alice.id, "Reply to reply", comment?.id);
   assert.equal(reply?.depth, 1);
   assert.ok(reply);
@@ -111,11 +110,14 @@ test("core social database functions", async () => {
   assert.deepEqual(secondPage.map((p) => p.id), [post.id]);
   await deletePost(second.id, bob.id);
 
-  await setPostLiked(post.id, bob.id, true);
-  assert.deepEqual(await getPostLikeSummary(post.id, bob.id), { liked: true, likeCount: 1 });
-  await setPostLiked(post.id, bob.id, false);
-  assert.deepEqual(await getPostLikeSummary(post.id, bob.id), { liked: false, likeCount: 0 });
-  await setPostLiked(post.id, bob.id, true);
+  await setPostVote(post.id, bob.id, 1);
+  await setPostVote(post.id, bob.id, 1);
+  assert.deepEqual(await getPostVoteSummary(post.id, bob.id), { score: 1, viewerVote: 1 });
+  await setPostVote(post.id, alice.id, -1);
+  assert.deepEqual(await getPostVoteSummary(post.id, alice.id), { score: 0, viewerVote: -1 });
+  await setPostVote(post.id, alice.id, 0);
+  assert.deepEqual(await getPostVoteSummary(post.id, alice.id), { score: 1, viewerVote: 0 });
+  assert.deepEqual(await getPostVotes(bob.id, [post.id]), new Map([[post.id, 1]]));
 
   const feed = await listHomeFeed(bob.id);
   assert.equal(feed[0]?.id, post.id);
