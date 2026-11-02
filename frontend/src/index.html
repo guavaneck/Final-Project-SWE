@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Forum</title>
+  <link rel="stylesheet" href="/frontend/src/stylesheet.css">
+</head>
+<body>
+
+  <header>
+    <span class="logo" onclick="go('home')">Forum</span>
+    <input id="q" type="search" placeholder="Search posts…" oninput="render()">
+    <span class="spacer"></span>
+    <button class="primary" onclick="go('newPost')">+ Post</button>
+    <button id="userBtn" onclick="go('profile')"></button>
+  </header>
+
+  <div class="layout">
+    <aside class="side">
+      <div class="card">
+        <h3>Feeds</h3>
+        <div id="nav"></div>
+      </div>
+      <div class="card">
+        <h3>Communities</h3>
+        <div id="communities"></div>
+        <button class="full" onclick="go('newCommunity')">+ Create community</button>
+      </div>
+    </aside>
+
+    <main id="main"></main>
+
+    <aside class="side">
+      <div class="card">
+        <h3>About</h3>
+        <p class="meta">Community-run forum.</p>
+      </div>
+      <div class="card">
+        <h3>Creator Studio</h3>
+        <p class="meta">Views, likes, and other analytics here.</p>
+      </div>
+    </aside>
+  </div>
+
+  <script src="/frontend/src/api.js"></script>
+  <script src="/frontend/src/app.js"></script>
+</body>
+</html>
