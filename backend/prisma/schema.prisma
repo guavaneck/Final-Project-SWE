@@ -59,6 +59,9 @@ model User {
   sessions       Session[]
   postVotes      PostVote[]
   commentVotes   CommentVote[]
+  postViews      PostView[]
+  postShares     PostShare[]
+  postVoteEvents PostVoteEvent[]
   following      UserFollow[]  @relation("Follower")
   followers      UserFollow[]  @relation("Followed")
 
@@ -136,6 +139,9 @@ model Post {
   community   Community @relation(fields: [communityId], references: [id])
   comments    Comment[]
   votes       PostVote[]
+  views       PostView[]
+  shares      PostShare[]
+  voteEvents  PostVoteEvent[]
   media       PostMedia[]
 
   @@index([communityId, createdAt(sort: Desc), id(sort: Desc)])
@@ -178,6 +184,49 @@ model PostVote {
   @@id([postId, userId])
   @@index([userId])
   @@map("post_votes")
+}
+
+// One authenticated viewer is counted at most once per post per UTC day.
+model PostView {
+  id        String   @id @db.Uuid
+  postId    String   @map("post_id") @db.Uuid
+  viewerId  String   @map("viewer_id") @db.Uuid
+  viewedDay DateTime @map("viewed_day") @db.Date
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  viewer    User     @relation(fields: [viewerId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, viewerId, viewedDay])
+  @@index([postId, createdAt])
+  @@map("post_views")
+}
+
+model PostShare {
+  id        String   @id @db.Uuid
+  postId    String   @map("post_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt])
+  @@map("post_shares")
+}
+
+// Records transitions between vote states (-1, 0, 1), allowing historical graphs
+// without changing the current-vote semantics of PostVote.
+model PostVoteEvent {
+  id        String   @id @db.Uuid
+  postId    String   @map("post_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  oldValue  Int      @map("old_value") @db.SmallInt
+  newValue  Int      @map("new_value") @db.SmallInt
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt])
+  @@map("post_vote_events")
 }
 
 model CommentVote {

@@ -140,6 +140,9 @@ const api = {
   votePost: (id, value) => value
     ? request('PUT', `/posts/${id}/vote`, {value})
     : request('DELETE', `/posts/${id}/vote`),
+  recordPostView: (id) => request('POST', `/posts/${id}/view`),
+  sharePost: (id) => request('POST', `/posts/${id}/share`),
+  getCreatorAnalytics: (range = '30d') => request('GET', `/analytics/creator?range=${encodeURIComponent(range)}`),
 
   // Media: declare the file, PUT it to storage, then have the API check it.
   // Rejections (wrong type, too big, failed checks) throw with the API's reason as the message.

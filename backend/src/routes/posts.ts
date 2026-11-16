@@ -4,6 +4,7 @@
 import { Router } from "express";
 import * as posts from "../controller/postController.js";
 import { optionalAuth, requireAuth } from "../middleware/auth.js";
+import * as analytics from "../controller/analyticsController.js";
 
 const router = Router();
 
@@ -16,6 +17,8 @@ router.patch("/:postId", requireAuth, posts.updatePost);
 router.delete("/:postId", requireAuth, posts.deletePost);
 router.put("/:postId/vote", requireAuth, posts.votePost);
 router.delete("/:postId/vote", requireAuth, posts.unvotePost);
+router.post("/:postId/view", requireAuth, analytics.viewPost);
+router.post("/:postId/share", requireAuth, analytics.sharePost);
 
 router.get("/:postId/comments", optionalAuth, posts.listComments);
 router.post("/:postId/comments", requireAuth, posts.createComment);
