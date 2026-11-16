@@ -25,6 +25,19 @@ import {
   creatorAnalytics,
   recordPostView,
   recordPostShare,
+  addModerator,
+  banUser,
+  isBanned,
+  isModerator,
+  listBans,
+  listModerators,
+  listPinnedPosts,
+  MAX_PINNED_POSTS,
+  pinPost,
+  removeModerator,
+  unbanUser,
+  unpinPost,
+  updateCommunity,
 } from "../src/db/index.js";
 
 const createdUserIds: string[] = [];
@@ -139,4 +152,81 @@ test("core social database functions", async () => {
   assert.equal(await deletePost(post.id, bob.id), false);
   assert.equal(await deletePost(post.id, alice.id), true);
   assert.equal(await getPostById(post.id), null);
+});
+
+test("community moderation", async () => {
+  const suffix = `${Date.now()}`;
+  const [mod, member, other] = await Promise.all(
+    ["mod", "member", "other"].map((name) =>
+      createUser({
+        username: `${name}_${suffix}`,
+        email: `${name}_${suffix}@example.com`,
+        passwordHash: "test-hash",
+        displayName: name,
+      }),
+    ),
+  );
+  createdUserIds.push(mod!.id, member!.id, other!.id);
+
+  const community = await createCommunity({ creatorId: mod!.id, slug: `modded-${suffix}`, name: "Modded" });
+  createdCommunityIds.push(community.id);
+
+  // The creator is the first moderator, and the last moderator can't be removed.
+  assert.equal(await isModerator(community.id, mod!.id), true);
+  assert.equal(await isModerator(community.id, member!.id), false);
+  assert.equal(await removeModerator(community.id, mod!.id), "last");
+  assert.equal(await removeModerator(community.id, member!.id), "missing");
+
+  await addModerator(community.id, other!.id, mod!.id);
+  assert.deepEqual((await listModerators(community.id)).map((m) => m.user.id), [mod!.id, other!.id]);
+  assert.equal(await removeModerator(community.id, other!.id), "removed");
+
+  const edited = await updateCommunity(community.id, { name: "Renamed", description: "About" });
+  assert.equal(edited.name, "Renamed");
+  assert.equal((await updateCommunity(community.id, { description: null })).description, null);
+
+  // Moderators can delete anyone's post or comment (authorId null skips the author check).
+  const post = await createPost({
+    authorId: member!.id,
+    communityId: community.id,
+    postType: "text",
+    title: "Member post",
+    body: "Hi",
+  });
+  const comment = await createComment(post.id, member!.id, "Member comment");
+  assert.ok(comment);
+  assert.equal(await deleteComment(comment.id, null), true);
+
+  // Pins are limited, and deleting a post unpins it.
+  const extra = await Promise.all(
+    Array.from({ length: MAX_PINNED_POSTS }, (_, i) =>
+      createPost({ authorId: mod!.id, communityId: community.id, postType: "text", title: `Pin ${i}`, body: "x" }),
+    ),
+  );
+  for (const pinned of extra) assert.equal(await pinPost(pinned.id, community.id), true);
+  assert.equal(await pinPost(extra[0]!.id, community.id), true, "re-pinning a pinned post is fine");
+  assert.equal(await pinPost(post.id, community.id), false, "over the limit");
+  await unpinPost(extra[0]!.id);
+  assert.equal(await pinPost(post.id, community.id), true);
+  assert.equal(await deletePost(post.id, null), true);
+  assert.deepEqual(
+    (await listPinnedPosts(community.id)).map((p) => p.id).sort(),
+    [extra[1]!.id, extra[2]!.id].sort(),
+  );
+
+  // Banning removes membership; unbanning lifts the ban.
+  await joinCommunity(community.id, member!.id);
+  await banUser(community.id, member!.id, mod!.id, "Spam");
+  assert.equal(await isBanned(community.id, member!.id), true);
+  assert.equal(
+    await prisma.communityMembership.count({ where: { communityId: community.id, userId: member!.id } }),
+    0,
+  );
+  assert.deepEqual(
+    (await listBans(community.id)).map((ban) => [ban.user.id, ban.reason, ban.bannedBy?.id]),
+    [[member!.id, "Spam", mod!.id]],
+  );
+  assert.equal(await unbanUser(community.id, member!.id), true);
+  assert.equal(await unbanUser(community.id, member!.id), false);
+  assert.equal(await isBanned(community.id, member!.id), false);
 });

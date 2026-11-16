@@ -18,8 +18,17 @@ export function createCommunity(input: CreateCommunityInput) {
       creatorId,
       ...community,
       memberships: { create: { userId: creatorId } },
+      moderators: { create: { userId: creatorId } },
     },
   });
+}
+
+export function updateCommunity(
+  id: string,
+  // Omitted fields are left as they are; null clears the description.
+  changes: { name?: string; description?: string | null; visibility?: Visibility },
+) {
+  return prisma.community.update({ where: { id }, data: { ...changes, updatedAt: new Date() } });
 }
 
 export function listPublicCommunities() {

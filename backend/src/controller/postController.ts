@@ -44,15 +44,31 @@ function readPage(req: Request, res: Response) {
   return { limit, cursor };
 }
 
-// Sends one page of a feed, with the viewer's vote on each post and signed URLs for each post's media.
-async function sendPage(
-  res: Response,
-  posts: Awaited<ReturnType<typeof db.listCommunityPosts>>,
-  limit: number,
-  viewerId?: string,
-) {
-  const page = postService.postPage(await postService.withViewerVotes(posts, viewerId), limit);
-  res.json({ ...page, posts: await Promise.all(page.posts.map((post) => mediaService.withMediaUrls(post))) });
+type PostList = Awaited<ReturnType<typeof db.listCommunityPosts>>;
+
+// Adds the viewer's vote on each post and signed URLs for each post's media.
+async function withDetails(posts: PostList, viewerId?: string) {
+  return Promise.all((await postService.withViewerVotes(posts, viewerId)).map((post) => mediaService.withMediaUrls(post)));
+}
+
+// Sends one page of a feed. `extra` adds fields to the response, e.g. a community's pinned posts.
+async function sendPage(res: Response, posts: PostList, limit: number, viewerId?: string, extra?: object) {
+  const page = postService.postPage(await withDetails(posts, viewerId), limit);
+  res.json({ ...extra, ...page });
+}
+
+// Sends a 403 and returns true if the user is banned from the community.
+async function rejectBanned(res: Response, communityId: string, userId: string): Promise<boolean> {
+  if (!(await db.isBanned(communityId, userId))) return false;
+  res.status(403).json({ error: "You are banned from this community" });
+  return true;
+}
+
+// The authorId to pass to db.deletePost or db.deleteComment: the user's own ID if they wrote it,
+// null (no author check) if they moderate the community, or undefined if they can't delete it.
+async function deleteAs(authorId: string, communityId: string, userId: string): Promise<string | null | undefined> {
+  if (authorId === userId) return userId;
+  return (await db.isModerator(communityId, userId)) ? null : undefined;
 }
 
 // Reads mediaIds for a new post. Sends a 400 and returns null if they're invalid.
@@ -123,6 +139,7 @@ export async function createPost(req: Request, res: Response) {
   if (!(await db.getCommunityById(communityId))) {
     return res.status(404).json({ error: "Community not found" });
   }
+  if (await rejectBanned(res, communityId, authorId)) return;
   const mediaError = mediaIds.length ? await mediaService.checkAttachable(mediaIds, authorId) : null;
   if (mediaError) {
     return res.status(409).json({ error: mediaError });
@@ -168,6 +185,7 @@ export async function updatePost(req: Request<{ postId: string }>, res: Response
   if (existing.authorId !== authorId) {
     return res.status(403).json({ error: "You are not the author of this post" });
   }
+  if (await rejectBanned(res, existing.communityId, authorId)) return;
 
   const changes = { title: title?.trim(), body: patchField(body), externalUrl: patchField(externalUrl) };
   const error = postService.validatePostContent(existing.postType, {
@@ -187,15 +205,16 @@ export async function updatePost(req: Request<{ postId: string }>, res: Response
 }
 
 //DELETE /api/posts/:postId
+// The author or a moderator of the post's community can delete it.
 export async function deletePost(req: Request<{ postId: string }>, res: Response) {
-  const authorId = authenticatedUser(req).id;
+  const userId = authenticatedUser(req).id;
 
   const post = await findPost(req, res);
   if (!post) return;
 
-  const deleted = await db.deletePost(post.id, authorId);
-  if (!deleted) {
-    return res.status(403).json({ error: "You are not the author of this post" });
+  const authorId = await deleteAs(post.authorId, post.communityId, userId);
+  if (authorId === undefined || !(await db.deletePost(post.id, authorId))) {
+    return res.status(403).json({ error: "You are not the author of this post or a moderator of its community" });
   }
   // The post's files go too: from storage and from the database.
   await mediaService.purgeMedia(post.media.map(({ media }) => media));
@@ -213,6 +232,7 @@ export async function homeFeed(req: Request, res: Response) {
 }
 
 //GET /api/communities/:communityId/posts
+// The first page (no cursor) also has `pinned`: the community's pinned posts, which stay in `posts` too.
 export async function communityFeed(req: Request<{ communityId: string }>, res: Response) {
   const { communityId } = req.params;
   if (!postService.isUuid(communityId) || !(await db.getCommunityById(communityId))) {
@@ -221,7 +241,38 @@ export async function communityFeed(req: Request<{ communityId: string }>, res: 
   const page = readPage(req, res);
   if (!page) return;
 
-  await sendPage(res, await db.listCommunityPosts(communityId, page.limit, page.cursor), page.limit, req.auth?.user.id);
+  const viewerId = req.auth?.user.id;
+  const pinned = page.cursor ? undefined : { pinned: await withDetails(await db.listPinnedPosts(communityId), viewerId) };
+  await sendPage(res, await db.listCommunityPosts(communityId, page.limit, page.cursor), page.limit, viewerId, pinned);
+}
+
+// Sends a 403 and returns false if the user doesn't moderate the post's community.
+async function checkModerator(res: Response, communityId: string, userId: string): Promise<boolean> {
+  if (await db.isModerator(communityId, userId)) return true;
+  res.status(403).json({ error: "You are not a moderator of this community" });
+  return false;
+}
+
+// PUT /api/posts/:postId/pin (moderators)
+export async function pinPost(req: Request<{ postId: string }>, res: Response) {
+  const post = await findPost(req, res);
+  if (!post) return;
+  if (!(await checkModerator(res, post.communityId, authenticatedUser(req).id))) return;
+
+  if (!(await db.pinPost(post.id, post.communityId))) {
+    return res.status(409).json({ error: `A community can have at most ${db.MAX_PINNED_POSTS} pinned posts` });
+  }
+  res.status(204).end();
+}
+
+// DELETE /api/posts/:postId/pin (moderators)
+export async function unpinPost(req: Request<{ postId: string }>, res: Response) {
+  const post = await findPost(req, res);
+  if (!post) return;
+  if (!(await checkModerator(res, post.communityId, authenticatedUser(req).id))) return;
+
+  await db.unpinPost(post.id);
+  res.status(204).end();
 }
 
 // PUT /api/posts/:postId/vote
@@ -269,6 +320,7 @@ export async function createComment(req: Request<{ postId: string }>, res: Respo
 
   const post = await findPost(req, res);
   if (!post) return;
+  if (await rejectBanned(res, post.communityId, authorId)) return;
 
   const comment = await db.createComment(post.id, authorId, body, parentId ?? undefined);
   if (!comment) {
@@ -285,8 +337,11 @@ async function findComment(
   if (!post) return null;
   const { commentId } = req.params;
   const comment = postService.isUuid(commentId) ? await db.getCommentOnPost(commentId, post.id) : null;
-  if (!comment) res.status(404).json({ error: "Comment not found on this post" });
-  return comment;
+  if (!comment) {
+    res.status(404).json({ error: "Comment not found on this post" });
+    return null;
+  }
+  return { ...comment, communityId: post.communityId };
 }
 
 // PATCH /api/posts/:postId/comments/:commentId
@@ -303,6 +358,7 @@ export async function updateComment(
 
   const comment = await findComment(req, res);
   if (!comment) return;
+  if (await rejectBanned(res, comment.communityId, authorId)) return;
 
   const updated = await db.updateComment(comment.id, authorId, body);
   if (!updated) {
@@ -313,17 +369,18 @@ export async function updateComment(
 
 // DELETE /api/posts/:postId/comments/:commentId
 // Replies stay in the thread under the deleted comment, which keeps its place with a null body.
+// The author or a moderator of the post's community can delete it.
 export async function deleteComment(
   req: Request<{ postId: string; commentId: string }>,
   res: Response,
 ) {
-  const authorId = authenticatedUser(req).id;
+  const userId = authenticatedUser(req).id;
   const comment = await findComment(req, res);
   if (!comment) return;
 
-  const deleted = await db.deleteComment(comment.id, authorId);
-  if (!deleted) {
-    return res.status(403).json({ error: "You are not the author of this comment" });
+  const authorId = await deleteAs(comment.authorId, comment.communityId, userId);
+  if (authorId === undefined || !(await db.deleteComment(comment.id, authorId))) {
+    return res.status(403).json({ error: "You are not the author of this comment or a moderator of its community" });
   }
   res.status(204).end();
 }
