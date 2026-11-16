@@ -7,6 +7,7 @@ import postsRouter from "./routes/posts.js";
 import authRouter from "./routes/auth.js";
 import communitiesRouter from "./routes/communities.js";
 import mediaRouter from "./routes/media.js";
+import usersRouter from "./routes/users.js";
 import { cleanUpAbandonedMedia } from "./services/mediaService.js";
 
 const app = express();
@@ -23,6 +24,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/posts", postsRouter);
 app.use("/api/communities", communitiesRouter);
 app.use("/api/media", mediaRouter);
+app.use("/api/users", usersRouter);
 
 app.use("/api", (_req, res) => {
   res.status(404).json({ error: "Not found" });
