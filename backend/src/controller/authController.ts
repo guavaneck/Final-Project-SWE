@@ -11,6 +11,10 @@ function validPassword(value: unknown): value is string {
   return typeof value === "string" && value.length >= 8 && value.length <= 128;
 }
 
+function validLoginPassword(value: unknown): value is string {
+  return typeof value === "string" && value.length >= 1 && value.length <= 128;
+}
+
 function publicUser(user: { id: string; username: string; email: string; displayName: string }) {
   return { id: user.id, username: user.username, email: user.email, displayName: user.displayName };
 }
@@ -60,7 +64,7 @@ export async function register(req: Request, res: Response) {
 export async function login(req: Request, res: Response) {
   const { login: rawLogin, password, deviceName } = req.body ?? {};
   const login = typeof rawLogin === "string" ? rawLogin.trim() : "";
-  if (!login || !validPassword(password)) {
+  if (!login || !validLoginPassword(password)) {
     return res.status(400).json({ error: "login and password are required" });
   }
 

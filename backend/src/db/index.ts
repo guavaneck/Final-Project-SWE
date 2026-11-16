@@ -1,4 +1,5 @@
 export * from "./client.js";
+export * from "./analytics.js";
 export * from "./communities.js";
 export * from "./media.js";
 export * from "./posts.js";
