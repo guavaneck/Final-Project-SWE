@@ -2,6 +2,83 @@
 
 All notable changes to this project are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-11-16
+
+This release adds creator analytics, following users, and creating communities, and lets the frontend show and upload images and videos.
+
+### Upgrading from 0.2.0
+
+1. Apply the new database migration: `npm --prefix backend run db:migrate`
+2. Optionally, reseed the demo data: `npm --prefix backend run db:seed-demo` (see [Demo data](#demo-data)).
+
+There are no new dependencies or settings.
+
+### Breaking changes
+
+- **The demo seed has changed.** `db:seed-demo` no longer creates the `demo` user (`demo` / `demo-password`) or the `demo` community. It creates `creator_demo` and six viewer accounts, all with the password `1234`, and a `creator-lab` community instead. Rows created by older runs are left in place.
+
+### Added
+
+#### Creator analytics (#35)
+
+- `GET /api/analytics/creator?range=7d|30d|90d` (default `30d`, login required) returns analytics for your own posts: totals, and for each post its views, shares, upvotes, downvotes, score, and a day-by-day `series` for the range. Any other `range` gets `400`.
+- `POST /api/posts/:postId/view` records a view. Each logged-in viewer counts at most once per post per UTC day, and authors never count as viewers of their own posts. Returns `201` with `{ "counted": boolean }`.
+- `POST /api/posts/:postId/share` records a share and returns `201` with `{ "shared": true }`.
+- Every change to a post vote is now recorded, so the analytics can graph upvotes and downvotes over time.
+- Frontend: a Creator Studio card in the sidebar with your latest post's numbers, an analytics page at `/analytics` with a range picker, a per-post page at `/analytics/posts/:postId` with a vote chart, a "View post analytics" link on your posts, and a "Share post" button that copies the post's link.
+
+#### Following users (#36)
+
+- `PUT /api/users/:userId/follow` and `DELETE /api/users/:userId/follow` (login required) follow and unfollow a user. Both return `204`. Following yourself gets `400`, and following an unknown user gets `404`.
+- `GET /api/users/me/following` lists the IDs of the users you follow.
+- Frontend: a Follow / Following button next to post authors. Posts by people you follow appear in your home feed.
+
+#### Creating communities (#36)
+
+- `POST /api/communities` (login required) with `{ "slug", "name", "description" }`. The slug is 3-32 lowercase letters, numbers, or underscores; the name is 1-100 characters; the description is optional and at most 750 characters. A taken slug gets `409`. The creator becomes a member.
+- Frontend: a Create community page at `/communities/new`.
+
+#### Media in the frontend (#34)
+
+- Posts show their images and videos.
+- The new post form can attach up to 4 images or videos. Each uploads as soon as it's picked, with progress, and can be removed before posting.
+
+#### Frontend pages have URLs (#35)
+
+- `/posts/:postId`, `/communities/:communityId`, `/profile`, `/analytics`, and `/analytics/posts/:postId` can be bookmarked, reloaded, and shared, and the browser's back and forward buttons work.
+
+#### Demo data
+
+- `db:seed-demo` now builds an analytics demo: a `creator_demo` account with three posts in `creator-lab`, and six viewer accounts (`viewer_alex` through `viewer_frankie`) whose views, shares, and votes are spread over the last 30 days. Running it again replaces the demo posts. Log in as `creator_demo` / `1234` and open <http://localhost:3000/analytics>.
+
+### Changed
+
+- Logging in no longer applies the registration password rules, so any non-empty password up to 128 characters is checked against the account (#35). This lets the demo accounts' short password work.
+- The backend version in `package.json` is now 0.3.0. It had stayed at 0.1.1 through the 0.2.0 release.
+
+### Fixed
+
+- After logging in or registering, the community list is now loaded, so posts can be created without reloading the page (#36).
+
+### Database
+
+One new migration, `202611150001_creator_analytics`, from #35. It only adds tables, so existing data is unchanged.
+
+- `post_views`: one row per viewer per post per UTC day (unique on `post_id`, `viewer_id`, `viewed_day`).
+- `post_shares`: one row per share.
+- `post_vote_events`: one row per vote change, with `old_value` and `new_value` (each `-1`, `0`, or `1`, and never equal). Votes cast before this release have no events, so they don't appear in the vote charts.
+
+All three reference `posts` and `users` with `ON DELETE CASCADE` and are indexed on `(post_id, created_at)`.
+
+**Rolling back:** there is no down migration. Drop the three tables to undo it; the analytics data would be lost.
+
+### Known issues
+
+- Feeds in the frontend still show only the first 20 posts.
+- There are no endpoints yet to join or leave communities, so the home feed only includes communities you created.
+- Only logged-in viewers are counted as views.
+- `docs/erd.md`, `docs/database-design.md`, and `docs/swe_erd_v2.pdf` don't include the new analytics tables, and the PDF still shows `post_likes` and `comment_likes`.
+
 ## [0.2.0] - 2026-11-02
 
 This release adds accounts, voting, post and comment management, feeds, and video and image uploads, and connects the frontend to the real API.
