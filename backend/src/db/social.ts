@@ -1,4 +1,5 @@
 import { prisma } from "./client.js";
+import { randomUUID } from "node:crypto";
 
 export type VoteValue = -1 | 0 | 1;
 
@@ -25,15 +26,24 @@ export async function listFollowingIds(followerId: string): Promise<string[]> {
 
 // 0 removes the user's vote.
 export async function setPostVote(postId: string, userId: string, value: VoteValue): Promise<void> {
-  if (value === 0) {
-    await prisma.postVote.deleteMany({ where: { postId, userId } });
-  } else {
-    await prisma.postVote.upsert({
-      where: { postId_userId: { postId, userId } },
-      create: { postId, userId, value },
-      update: { value },
+  await prisma.$transaction(async (transaction) => {
+    const existing = await transaction.postVote.findUnique({
+      where: { postId_userId: { postId, userId } }, select: { value: true },
     });
-  }
+    const oldValue = (existing?.value ?? 0) as VoteValue;
+    if (oldValue === value) return;
+    if (value === 0) {
+      await transaction.postVote.deleteMany({ where: { postId, userId } });
+    } else {
+      await transaction.postVote.upsert({
+        where: { postId_userId: { postId, userId } },
+        create: { postId, userId, value }, update: { value },
+      });
+    }
+    await transaction.postVoteEvent.create({
+      data: { id: randomUUID(), postId, userId, oldValue, newValue: value },
+    });
+  });
 }
 
 export async function getPostVoteSummary(postId: string, userId: string) {
