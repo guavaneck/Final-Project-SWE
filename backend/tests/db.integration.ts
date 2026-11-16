@@ -22,6 +22,9 @@ import {
   setCommentVote,
   updateComment,
   updatePost,
+  creatorAnalytics,
+  recordPostView,
+  recordPostShare,
 } from "../src/db/index.js";
 
 const createdUserIds: string[] = [];
@@ -118,6 +121,18 @@ test("core social database functions", async () => {
   await setPostVote(post.id, alice.id, 0);
   assert.deepEqual(await getPostVoteSummary(post.id, alice.id), { score: 1, viewerVote: 0 });
   assert.deepEqual(await getPostVotes(bob.id, [post.id]), new Map([[post.id, 1]]));
+
+  assert.equal(await recordPostView(post.id, alice.id), false, "authors do not count as their own views");
+  assert.equal(await recordPostView(post.id, bob.id), true);
+  assert.equal(await recordPostView(post.id, bob.id), false, "a viewer counts once per UTC day");
+  assert.equal(await recordPostShare(post.id, bob.id), true);
+  const analytics = await creatorAnalytics(alice.id, 7);
+  const postAnalytics = analytics.posts.find((item) => item.id === post.publicId);
+  assert.equal(postAnalytics?.views, 1);
+  assert.equal(postAnalytics?.shares, 1);
+  assert.equal(postAnalytics?.upvotes, 1);
+  assert.equal(postAnalytics?.downvotes, 0);
+  assert.equal(postAnalytics?.series.length, 7);
 
   const feed = await listHomeFeed(bob.id);
   assert.equal(feed[0]?.id, post.id);
