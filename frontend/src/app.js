@@ -8,6 +8,9 @@ const state = {
     authMode: 'login',
     notice: null,
     replyTo: null,
+    commentDraft: '',
+    replyDrafts: {},
+    draftPostId: null,
     analyticsRange: '30d',
     analyticsPostId: null
 };
@@ -246,7 +249,7 @@ function postCard(p, full = false) {
     ? `<div><a href="${esc(p.externalUrl)}" target="_blank" rel="noopener noreferrer">${esc(p.externalUrl)}</a></div>` : '';
     return `
     <div class="card post">
-    <div class="votes">${voteButtons(p, `vote(${js(p.id)},`)}</div>
+    <div class="votes" data-post-vote="${esc(p.id)}" data-vote="${p.vote}">${voteButtons(p, `vote(${js(p.id)},`)}</div>
     <div>
     <div class="meta">
     <span class="tag">c/${esc(communityName(p.communityId))}</span>
@@ -284,21 +287,45 @@ function voteButtons(item, call) {
 
 async function vote(id, value) {
     try {
-        await api.votePost(id, value);
-        render();
+        const summary = await api.votePost(id, value);
+        document.querySelectorAll(`[data-post-vote="${id}"]`).forEach((container) =>
+            updateVoteDisplay(container, summary, (next) => vote(id, next))
+        );
     } catch (err) { fail(err); }
 }
 
 async function voteComment(commentId, value) {
     try {
-        await api.voteComment(state.postId, commentId, value);
-        render();
+        const summary = await api.voteComment(state.postId, commentId, value);
+        document.querySelectorAll(`[data-comment-vote="${commentId}"]`).forEach((container) =>
+            updateVoteDisplay(container, summary, (next) => voteComment(commentId, next))
+        );
     } catch (err) { fail(err); }
+}
+
+function updateVoteDisplay(container, summary, submitVote) {
+    const vote = summary.viewerVote ?? 0;
+    const up = container.querySelector('button.up');
+    const down = container.querySelector('button.down');
+    const score = container.querySelector('b');
+    container.dataset.vote = vote;
+    up.classList.toggle('on', vote === 1);
+    down.classList.toggle('on', vote === -1);
+    score.classList.toggle('up', vote === 1);
+    score.classList.toggle('down', vote === -1);
+    score.textContent = summary.score;
+    up.onclick = () => submitVote(vote === 1 ? 0 : 1);
+    down.onclick = () => submitVote(vote === -1 ? 0 : -1);
 }
 
 // Post and comments
 async function postView(user) {
     const p = await api.getPost(state.postId);
+    if (state.draftPostId !== p.id) {
+        state.draftPostId = p.id;
+        state.commentDraft = '';
+        state.replyDrafts = {};
+    }
     api.recordPostView(state.postId).catch(() => {});
     const authorTools = p.author === user.name
     ? `<div class="card meta">
@@ -313,7 +340,7 @@ async function postView(user) {
     ${authorTools}
     <div class="card">
     <label for="commentBody">Add a comment</label>
-    <textarea id="commentBody"></textarea>
+    <textarea id="commentBody" oninput="state.commentDraft=this.value">${esc(state.commentDraft)}</textarea>
     <div class="row top-gap"><button class="primary" onclick="submitComment()">Comment</button></div>
     </div>
     <div class="card"><h3>Comments</h3>${comments}</div>`;
@@ -412,7 +439,7 @@ function selectAnalyticsPost(id) {
 function commentView(c) {
     const replyForm = state.replyTo === c.id ? `
     <label for="replyBody">Reply to u/${esc(c.author)}</label>
-    <textarea id="replyBody"></textarea>
+    <textarea id="replyBody" oninput="state.replyDrafts[${js(c.id)}]=this.value">${esc(state.replyDrafts[c.id] || '')}</textarea>
     <div class="row top-gap">
     <button class="primary" onclick="submitComment(${js(c.id)})">Reply</button>
     <button onclick="setReplyTo(null)">Cancel</button>
@@ -421,7 +448,7 @@ function commentView(c) {
     <div class="meta">u/${esc(c.author)} · ${timeAgo(c.created)}</div>
     ${esc(c.body)}
     ${c.deleted ? '' : `<div class="meta row">
-    <span class="votes inline">${voteButtons(c, `voteComment(${js(c.id)},`)}</span>
+    <span class="votes inline" data-comment-vote="${esc(c.id)}" data-vote="${c.vote}">${voteButtons(c, `voteComment(${js(c.id)},`)}</span>
     <button class="link" onclick="setReplyTo(${js(c.id)})">Reply</button>
     </div>`}
     ${replyForm}
@@ -439,6 +466,8 @@ async function submitComment(parentId) {
     if (!body) return;
     try {
         await api.addComment(state.postId, body, parentId);
+        if (parentId) delete state.replyDrafts[parentId];
+        else state.commentDraft = '';
         state.replyTo = null;
         render();
     } catch (err) { fail(err); }
@@ -664,6 +693,4 @@ function profileView(u) {
 syncStateFromLocation();
 addEventListener('popstate', () => { syncStateFromLocation(); shownPage = null; render(); });
 render();
-
-
 
