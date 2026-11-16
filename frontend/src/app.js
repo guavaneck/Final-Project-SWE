@@ -1,8 +1,9 @@
 const state = {
-    view: 'home',        
+    view: 'home',
     communityId: null,
     postId: null,
     communities: [],
+    communitiesLoaded: false,
     user: null,
     authMode: 'login',
     notice: null,
@@ -27,6 +28,7 @@ const communityName = (id) =>
     (state.communities.find((c) => c.id === id) || {}).name || String(id).slice(0, 8);
 
 function go(view, extra = {}) {
+    clearUploads();
     const next = { view, communityId: null, postId: null, replyTo: null, analyticsPostId: null, ...extra };
     const path = pathFor(next);
     if (location.pathname !== path) history.pushState({}, '', path);
@@ -112,7 +114,11 @@ async function render() {
     if (page !== shownPage) main.innerHTML = '<div class="empty">Loading…</div>';
 
     try {
-        if (!state.user) [state.user, state.communities] = await Promise.all([api.getUser(), api.listCommunities()]);
+        // Login and register set state.user themselves, so communities are tracked separately.
+        if (!state.user || !state.communitiesLoaded) {
+            [state.user, state.communities] = await Promise.all([state.user || api.getUser(), api.listCommunities()]);
+            state.communitiesLoaded = true;
+        }
         $('userBtn').textContent = 'u/' + state.user.name;
         $('communities').innerHTML = state.communities.map((c) =>
         `<a class="navitem ${state.communityId === c.id ? 'active' : ''}"
@@ -212,6 +218,7 @@ async function logout() {
     try { await api.logout(); } catch (err) { state.notice = err.message; }
     state.user = null;
     state.communities = [];
+    state.communitiesLoaded = false;
     go('home');
 }
 // Feed Area
@@ -247,6 +254,7 @@ function postCard(p, full = false) {
     </div>
     <h2 onclick="${open}">${esc(p.title)}</h2>
     ${link}
+    ${mediaView(p.media)}
     <div>${esc(body)}</div>
     <div class="meta">
     <button class="link" onclick="${open}">💬 ${comments}</button>
@@ -255,11 +263,23 @@ function postCard(p, full = false) {
     </div>`;
 }
 
+// A post's images and videos, in display order. width/height let the browser reserve space before loading.
+function mediaView(media) {
+    if (!media || !media.length) return '';
+    const items = media.map((m) => {
+        const size = m.width && m.height ? ` width="${m.width}" height="${m.height}"` : '';
+        return m.kind === 'video'
+            ? `<video src="${esc(m.url)}"${size} controls playsinline preload="metadata"></video>`
+            : `<a href="${esc(m.url)}" target="_blank" rel="noopener noreferrer"><img src="${esc(m.url)}"${size} alt="" loading="lazy"></a>`;
+    }).join('');
+    return `<div class="media-grid count-${media.length}">${items}</div>`;
+}
+
 function voteButtons(item, call) {
     return `
-    <button class="${item.vote === 1 ? 'on' : ''}" onclick="${call}${item.vote === 1 ? 0 : 1})" aria-label="Upvote">▲</button>
-    <b>${item.score}</b>
-    <button class="${item.vote === -1 ? 'on' : ''}" onclick="${call}${item.vote === -1 ? 0 : -1})" aria-label="Downvote">▼</button>`;
+    <button class="up ${item.vote === 1 ? 'on' : ''}" onclick="${call}${item.vote === 1 ? 0 : 1})" aria-label="Upvote">▲</button>
+    <b class="${item.vote === 1 ? 'up' : item.vote === -1 ? 'down' : ''}">${item.score}</b>
+    <button class="down ${item.vote === -1 ? 'on' : ''}" onclick="${call}${item.vote === -1 ? 0 : -1})" aria-label="Downvote">▼</button>`;
 }
 
 async function vote(id, value) {
@@ -448,9 +468,10 @@ function newPostView() {
     <label for="postCommunity">Community</label>
     <select id="postCommunity">${options}</select>
     <label for="postType">Type</label>
-    <select id="postType" onchange="$('postUrlField').hidden = this.value !== 'link'">
+    <select id="postType" onchange="setPostType(this.value)">
     <option value="text">Text</option>
     <option value="link">Link</option>
+    <option value="media">Image / Video</option>
     </select>
     <label for="postTitle">Title</label>
     <input type="text" id="postTitle">
@@ -458,8 +479,15 @@ function newPostView() {
     <label for="postUrl">Link URL</label>
     <input type="text" id="postUrl" placeholder="https://…">
     </div>
-    <label for="postBody">Body</label>
+    <div id="postMediaField" hidden>
+    <label for="postFiles">Images and videos (up to ${MAX_UPLOADS})</label>
+    <input type="file" id="postFiles" multiple accept="${UPLOAD_TYPES.join(',')}" onchange="addUploads(this)">
+    <p class="meta">JPEG, PNG, GIF, or WebP up to 20 MB. MP4, WebM, or MOV up to 500 MB.</p>
+    <div id="uploadList"></div>
+    </div>
+    <label for="postBody" id="postBodyLabel">Body</label>
     <textarea id="postBody"></textarea>
+    <div id="postError" class="error top-gap" hidden></div>
     <div class="row top-gap">
     <button class="primary" onclick="submitPost()">Publish</button>
     <button onclick="go('home')">Cancel</button>
@@ -467,20 +495,139 @@ function newPostView() {
     </div>`;
 }
 
+function setPostType(type) {
+    $('postUrlField').hidden = type !== 'link';
+    $('postMediaField').hidden = type !== 'media';
+    $('postBodyLabel').textContent = type === 'text' ? 'Body' : 'Body (optional)';
+}
+
+// Shows a problem with the post form without re-rendering it, so what's been typed and uploaded stays.
+function postFormError(message) {
+    const el = $('postError');
+    el.textContent = message || '';
+    el.hidden = !message;
+}
+
 async function submitPost() {
     const title = $('postTitle').value.trim();
-    if (!title) return fail(new Error('Title required'));
+    if (!title) return postFormError('Title required');
     const postType = $('postType').value;
+    let mediaIds;
+    if (postType === 'media') {
+        if (uploads.some((u) => u.status === 'uploading')) return postFormError('Wait for your uploads to finish.');
+        mediaIds = uploads.filter((u) => u.status === 'ready').map((u) => u.media.id);
+        if (!mediaIds.length) return postFormError('Add at least one image or video.');
+    }
+    postFormError(null);
     try {
         const post = await api.createPost({
             communityId: $('postCommunity').value,
             postType,
             title,
             body: $('postBody').value,
-            externalUrl: postType === 'link' ? $('postUrl').value.trim() : undefined
+            externalUrl: postType === 'link' ? $('postUrl').value.trim() : undefined,
+            mediaIds
         });
         go('post', { postId: post.id });
-    } catch (err) { fail(err); }
+    } catch (err) {
+        if (err.status === 401) return fail(err);
+        postFormError(err.message);
+    }
+}
+
+// Uploads for the post being written. Each starts as soon as it's picked, so the
+// API's verdict (wrong type, too big, not really a video…) shows before publishing.
+const MAX_UPLOADS = 4;
+const UPLOAD_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime'];
+let uploads = [];
+let uploadKey = 0;
+
+function clearUploads() {
+    for (const u of uploads) {
+        u.controller.abort();
+        URL.revokeObjectURL(u.preview);
+    }
+    uploads = [];
+}
+
+function addUploads(input) {
+    const files = [...input.files];
+    input.value = '';
+    const room = MAX_UPLOADS - uploads.filter((u) => u.status !== 'failed').length;
+    for (const [i, file] of files.entries()) {
+        const u = {
+            key: ++uploadKey,
+            name: file.name,
+            kind: file.type.startsWith('video/') ? 'video' : 'image',
+            preview: URL.createObjectURL(file),
+            controller: new AbortController(),
+            progress: 0,
+            status: 'uploading',
+            error: null,
+            media: null
+        };
+        uploads.push(u);
+        if (i >= room) {
+            u.status = 'failed';
+            u.error = `A post can have at most ${MAX_UPLOADS} images or videos.`;
+            continue;
+        }
+        startUpload(u, file);
+    }
+    renderUploads();
+}
+
+async function startUpload(u, file) {
+    try {
+        u.media = await api.uploadMedia(file, {
+            signal: u.controller.signal,
+            onProgress: (fraction) => {
+                u.progress = fraction;
+                const el = $('upload-status-' + u.key);
+                if (el) el.innerHTML = uploadStatus(u);
+            }
+        });
+        u.status = 'ready';
+    } catch (err) {
+        if (err.cancelled) return;
+        u.status = 'failed';
+        u.error = err.message;
+    }
+    renderUploads();
+}
+
+function removeUpload(key) {
+    const u = uploads.find((x) => x.key === key);
+    if (!u) return;
+    u.controller.abort();
+    URL.revokeObjectURL(u.preview);
+    uploads = uploads.filter((x) => x !== u);
+    renderUploads();
+}
+
+function uploadStatus(u) {
+    if (u.status === 'ready') return '<span class="meta">Ready</span>';
+    if (u.status === 'failed') return `<span class="error">${esc(u.error)}</span>`;
+    if (u.progress < 1) return `<progress max="1" value="${u.progress}"></progress> <span class="meta">${Math.round(u.progress * 100)}%</span>`;
+    return '<span class="meta">Checking file…</span>';
+}
+
+function renderUploads() {
+    const list = $('uploadList');
+    if (!list) return;
+    list.innerHTML = uploads.map((u) => {
+        const thumb = u.kind === 'video'
+            ? `<video src="${esc(u.preview)}" muted preload="metadata"></video>`
+            : `<img src="${esc(u.preview)}" alt="" onerror="this.style.visibility='hidden'">`;
+        return `<div class="upload ${u.status}">
+        ${thumb}
+        <div class="upload-info">
+        <div class="upload-name">${esc(u.name)}</div>
+        <div id="upload-status-${u.key}">${uploadStatus(u)}</div>
+        </div>
+        <button class="link danger" onclick="removeUpload(${u.key})" aria-label="Remove ${esc(u.name)}">✕</button>
+        </div>`;
+    }).join('');
 }
 
 // Creating a community
@@ -517,7 +664,6 @@ function profileView(u) {
 syncStateFromLocation();
 addEventListener('popstate', () => { syncStateFromLocation(); shownPage = null; render(); });
 render();
-
 
 
 
