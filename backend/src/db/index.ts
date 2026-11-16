@@ -2,6 +2,7 @@ export * from "./client.js";
 export * from "./analytics.js";
 export * from "./communities.js";
 export * from "./media.js";
+export * from "./moderation.js";
 export * from "./posts.js";
 export * from "./social.js";
 export * from "./users.js";

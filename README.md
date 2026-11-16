@@ -91,7 +91,7 @@ Both return `{ "liked": boolean, "likeCount": number }`. Comment responses inclu
 
 ## Managing posts and comments
 
-Only the author can edit or delete a post or comment; anyone else gets `403`.
+Only the author can edit a post or comment. The author or a moderator of its community can delete it (see [Moderation](#moderation)). Anyone else gets `403`.
 
 - `POST /api/posts` accepts `communityId`, `postType` (`text`, `link`, or `media`), `title` (1-300 characters), `body`, and `externalUrl`. Text posts need a `body` and can't have an `externalUrl`; link posts need an `http` or `https` `externalUrl`.
 - `PATCH /api/posts/:postId` accepts any of `title`, `body`, and `externalUrl`. Omitted fields stay the same; `null` or `""` clears `body` or `externalUrl`. The result must still follow the rules for the post's type.
@@ -104,7 +104,22 @@ Only the author can edit or delete a post or comment; anyone else gets `403`.
 Both feeds return `{ "posts": [...], "nextCursor": string | null }`, newest first. Pass `?limit=` (1-100, default 20) and, for the next page, `?cursor=` set to the previous page's `nextCursor`. `nextCursor` is `null` when there are no more posts.
 
 - `GET /api/posts/feed` (authenticated) lists posts by the current user, by people they follow, and in communities they've joined.
-- `GET /api/communities/:communityId/posts` lists a community's posts.
+- `GET /api/communities/:communityId/posts` lists a community's posts. The first page (no `cursor`) also has `pinned`: the community's pinned posts, oldest pin first. Pinned posts stay in `posts` too, in their usual place.
+
+## Moderation
+
+Each community has one or more moderators. Its creator is the first. There is one moderator level: any moderator can do everything below, including adding and removing other moderators, but a community can't lose its last moderator. Moderator-only endpoints return `403` to everyone else.
+
+- `GET /api/communities/:communityId` returns the community, its `moderators`, and `viewer: { isModerator, isBanned }` for the logged-in user (both `false` when logged out).
+- `PATCH /api/communities/:communityId` (moderators) accepts any of `name`, `description`, and `visibility` (`public` or `private`). `null` or `""` clears `description`. The slug can't change.
+- `GET /api/communities/:communityId/moderators` lists the moderators.
+- `PUT /api/communities/:communityId/moderators/:userId` (moderators) makes a user a moderator. Banned users can't be.
+- `DELETE /api/communities/:communityId/moderators/:userId` (moderators) removes a moderator, including yourself. Removing the last one returns `409`.
+- `GET /api/communities/:communityId/bans` (moderators) lists banned users, with the `reason` and who banned them.
+- `PUT /api/communities/:communityId/bans/:userId` (moderators) bans a user, with an optional `reason` (up to 500 characters). Banned users can't post, comment, or edit their posts and comments in the community, and banning removes them from its members. Moderators can't be banned; remove them as a moderator first.
+- `DELETE /api/communities/:communityId/bans/:userId` (moderators) lifts a ban.
+- `PUT /api/posts/:postId/pin` and `DELETE /api/posts/:postId/pin` (moderators of the post's community) pin and unpin a post. A community can have up to 3 pinned posts; pinning a fourth returns `409`. Post responses include `pinnedAt`, and deleting a post unpins it.
+- `DELETE /api/posts/:postId` and `DELETE /api/posts/:postId/comments/:commentId` also work for moderators of the post's community.
 
 Run the post validation unit tests (no database required):
 
