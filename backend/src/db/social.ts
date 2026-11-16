@@ -15,6 +15,14 @@ export async function unfollowUser(followerId: string, followedId: string): Prom
   return result.count === 1;
 }
 
+export async function listFollowingIds(followerId: string): Promise<string[]> {
+  const follows = await prisma.userFollow.findMany({
+    where: { followerId },
+    select: { followedId: true },
+  });
+  return follows.map((f) => f.followedId);
+}
+
 // 0 removes the user's vote.
 export async function setPostVote(postId: string, userId: string, value: VoteValue): Promise<void> {
   if (value === 0) {
