@@ -108,6 +108,8 @@ button.link {
 }
 
 button.link:hover { color: var(--accent); }
+.meta button.link.follow { padding: 0; font-size: inherit; }
+.meta button.link.follow.on { color: var(--accent); }
 button.danger { color: var(--danger); }
 button.full { width: 100%; margin-top: 8px; }
 

@@ -1,9 +1,9 @@
 const state = {
-    view: 'home',
+    view: 'home',        
     communityId: null,
     postId: null,
     communities: [],
-    communitiesLoaded: false,
+    following: new Set(),
     user: null,
     authMode: 'login',
     notice: null,
@@ -97,7 +97,7 @@ async function render() {
     $('q').hidden = !loggedIn;
     $('newPostBtn').hidden = !loggedIn;
     $('logoutBtn').hidden = !loggedIn;
-    $('newCommunityBtn').hidden = true;
+    $('newCommunityBtn').hidden = !loggedIn;
 
     if (!loggedIn) {
         state.user = null;
@@ -117,10 +117,9 @@ async function render() {
     if (page !== shownPage) main.innerHTML = '<div class="empty">Loading…</div>';
 
     try {
-        // Login and register set state.user themselves, so communities are tracked separately.
-        if (!state.user || !state.communitiesLoaded) {
-            [state.user, state.communities] = await Promise.all([state.user || api.getUser(), api.listCommunities()]);
-            state.communitiesLoaded = true;
+        if (!state.user) {
+            [state.user, state.communities, state.following] =
+                await Promise.all([api.getUser(), api.listCommunities(), api.listFollowing()]);
         }
         $('userBtn').textContent = 'u/' + state.user.name;
         $('communities').innerHTML = state.communities.map((c) =>
@@ -221,7 +220,7 @@ async function logout() {
     try { await api.logout(); } catch (err) { state.notice = err.message; }
     state.user = null;
     state.communities = [];
-    state.communitiesLoaded = false;
+    state.following = new Set();
     go('home');
 }
 // Feed Area
@@ -253,7 +252,7 @@ function postCard(p, full = false) {
     <div>
     <div class="meta">
     <span class="tag">c/${esc(communityName(p.communityId))}</span>
-    u/${esc(p.author)} · ${timeAgo(p.created)}
+    u/${esc(p.author)} ${followButton(p.authorId)}· ${timeAgo(p.created)}
     </div>
     <h2 onclick="${open}">${esc(p.title)}</h2>
     ${link}
@@ -283,6 +282,25 @@ function voteButtons(item, call) {
     <button class="up ${item.vote === 1 ? 'on' : ''}" onclick="${call}${item.vote === 1 ? 0 : 1})" aria-label="Upvote">▲</button>
     <b class="${item.vote === 1 ? 'up' : item.vote === -1 ? 'down' : ''}">${item.score}</b>
     <button class="down ${item.vote === -1 ? 'on' : ''}" onclick="${call}${item.vote === -1 ? 0 : -1})" aria-label="Downvote">▼</button>`;
+}
+
+function followButton(authorId) {
+    if (!authorId || !state.user || authorId === state.user.id) return '';
+    const on = state.following.has(authorId);
+    return `· <button class="link follow ${on ? 'on' : ''}" onclick="toggleFollow(${js(authorId)})">${on ? 'Following' : 'Follow'}</button> `;
+}
+
+async function toggleFollow(userId) {
+    try {
+        if (state.following.has(userId)) {
+            await api.unfollowUser(userId);
+            state.following.delete(userId);
+        } else {
+            await api.followUser(userId);
+            state.following.add(userId);
+        }
+        render();
+    } catch (err) { fail(err); }
 }
 
 async function vote(id, value) {
@@ -445,7 +463,7 @@ function commentView(c) {
     <button onclick="setReplyTo(null)">Cancel</button>
     </div>` : '';
     return `<div class="comment">
-    <div class="meta">u/${esc(c.author)} · ${timeAgo(c.created)}</div>
+    <div class="meta">u/${esc(c.author)} ${c.deleted ? '' : followButton(c.authorId)}· ${timeAgo(c.created)}</div>
     ${esc(c.body)}
     ${c.deleted ? '' : `<div class="meta row">
     <span class="votes inline" data-comment-vote="${esc(c.id)}" data-vote="${c.vote}">${voteButtons(c, `voteComment(${js(c.id)},`)}</span>
@@ -664,9 +682,29 @@ function newCommunityView() {
     return `
     <div class="card">
     <h2 class="flush">Create community</h2>
-    <p class="meta">Creating communities isn't available yet.</p>
+    <label for="communitySlug">Name</label>
+    <input type="text" id="communitySlug" placeholder="3-32 lowercase letters, numbers, or _">
+    <label for="communityName">Display name</label>
+    <input type="text" id="communityName" maxlength="100">
+    <label for="communityDesc">Description</label>
+    <textarea id="communityDesc" maxlength="1000" placeholder="Optional"></textarea>
+    <div class="row top-gap">
+    <button class="primary" onclick="submitCommunity()">Create</button>
     <button onclick="go('home')">Back</button>
+    </div>
     </div>`;
+}
+
+async function submitCommunity() {
+    try {
+        const c = await api.createCommunity({
+            slug: $('communitySlug').value.trim(),
+            name: $('communityName').value.trim(),
+            description: $('communityDesc').value.trim()
+        });
+        state.communities = await api.listCommunities();
+        go('home', { communityId: c.id });
+    } catch (err) { fail(err); }
 }
 
 // Profile page

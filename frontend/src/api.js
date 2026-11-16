@@ -31,6 +31,7 @@ const toUser = (u) => ({id: u.id, name: u.username, displayName: u.displayName, 
 const toComment = (c) => ({
   id: c.id,
   author: c.author ? c.author.username : '[deleted]',
+  authorId: c.authorId,
   body: c.body ?? '[deleted]',
   deleted: Boolean(c.deletedAt),
   created: Date.parse(c.createdAt),
@@ -72,6 +73,7 @@ const toPost = (p, comments = null) => ({
   id: p.publicId,
   communityId: p.communityId,
   author: p.author.username,
+  authorId: p.authorId,
   postType: p.postType,
   title: p.title,
   body: p.body ?? '',
@@ -103,6 +105,9 @@ const api = {
   // Users
   getUser: async () => toUser((await request('GET', '/auth/me')).user),
   updateUser: async () => { throw new Error('Editing profiles is not supported yet'); },
+  listFollowing: async () => new Set(await request('GET', '/users/me/following')),
+  followUser: (id) => request('PUT', `/users/${id}/follow`),
+  unfollowUser: (id) => request('DELETE', `/users/${id}/follow`),
 
   // Communities
   listCommunities: async () => (await request('GET', '/communities')).map((c) => ({
@@ -113,7 +118,7 @@ const api = {
     members: c._count.memberships,
     mods: []
   })),
-  createCommunity: async () => { throw new Error('Creating communities is not supported yet'); },
+  createCommunity: ({slug, name, description}) => request('POST', '/communities', {slug, name, description}),
 
   // Posts
   listPosts: async (communityId) => {
