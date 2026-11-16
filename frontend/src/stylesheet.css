@@ -5,6 +5,9 @@
   --muted: #9a9ea6;
   --line: #2c2f36;
   --accent: #818cf8;
+  /* Same 400-shade pastel family as --accent, so they sit with the lavender on the dark background */
+  --upvote: #4ade80;
+  --downvote: #f87171;
   --accent-text: #111111;
   --danger: #d93025;
 }
@@ -139,7 +142,13 @@ button.full { width: 100%; margin-top: 8px; }
   line-height: 1.2;
 }
 
-.votes button.on { color: var(--accent); }
+.votes button.up:hover,
+.votes button.up.on,
+.votes b.up { color: var(--upvote); }
+
+.votes button.down:hover,
+.votes button.down.on,
+.votes b.down { color: var(--downvote); }
 .votes.inline { flex-direction: row; min-width: 0; gap: 2px; }
 
 .post h2 {
@@ -252,3 +261,72 @@ textarea { min-height: 90px; resize: vertical; }
   .analytics-heading { align-items: stretch; flex-direction: column; }
   .analytics-heading select { width: 100%; }
 }
+
+/* Post media */
+.media-grid {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.media-grid.count-2,
+.media-grid.count-3,
+.media-grid.count-4 { grid-template-columns: 1fr 1fr; }
+
+.media-grid.count-3 > :first-child { grid-column: 1 / -1; }
+
+.media-grid a { display: block; }
+
+.media-grid img,
+.media-grid video {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 520px;
+  object-fit: contain;
+  background: #000;
+}
+
+.media-grid:not(.count-1) img,
+.media-grid:not(.count-1) video {
+  aspect-ratio: 1;
+  height: 100%;
+  object-fit: cover;
+}
+
+.media-grid:not(.count-1) video { object-fit: contain; }
+
+/* Uploads on the create-post form */
+input[type="file"] { color: var(--muted); font: inherit; }
+
+.upload {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.upload.failed { border-color: var(--danger); }
+
+.upload img,
+.upload video {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #000;
+}
+
+.upload-info { flex: 1; min-width: 0; font-size: 13px; }
+.upload-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upload progress { width: 140px; vertical-align: middle; accent-color: var(--accent); }
+.error.top-gap { margin-top: 10px; }
+.media-grid.count-3 > :first-child,
+.media-grid.count-3 > :first-child img { aspect-ratio: 2; }
