@@ -39,31 +39,35 @@ enum UploadStatus {
 }
 
 model User {
-  id             String        @id @db.Uuid
-  username       String        @unique @db.VarChar(32)
-  email          String        @unique @db.VarChar(320)
-  passwordHash   String        @map("password_hash")
-  displayName    String        @map("display_name") @db.VarChar(80)
-  bio            String?       @db.VarChar(500)
-  accountStatus  AccountStatus @default(active) @map("account_status")
-  avatarMediaId  String?       @map("avatar_media_id") @db.Uuid
-  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt      DateTime      @default(now()) @map("updated_at") @db.Timestamptz
-  deletedAt      DateTime?     @map("deleted_at") @db.Timestamptz
-  avatarMedia    MediaObject?  @relation("UserAvatar", fields: [avatarMediaId], references: [id], onDelete: SetNull)
-  comments       Comment[]
-  communities    Community[]
-  memberships    CommunityMembership[]
-  mediaObjects   MediaObject[] @relation("MediaOwner")
-  posts          Post[]
-  sessions       Session[]
-  postVotes      PostVote[]
-  commentVotes   CommentVote[]
-  postViews      PostView[]
-  postShares     PostShare[]
-  postVoteEvents PostVoteEvent[]
-  following      UserFollow[]  @relation("Follower")
-  followers      UserFollow[]  @relation("Followed")
+  id              String                @id @db.Uuid
+  username        String                @unique @db.VarChar(32)
+  email           String                @unique @db.VarChar(320)
+  passwordHash    String                @map("password_hash")
+  displayName     String                @map("display_name") @db.VarChar(80)
+  bio             String?               @db.VarChar(500)
+  accountStatus   AccountStatus         @default(active) @map("account_status")
+  avatarMediaId   String?               @map("avatar_media_id") @db.Uuid
+  createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime              @default(now()) @map("updated_at") @db.Timestamptz
+  deletedAt       DateTime?             @map("deleted_at") @db.Timestamptz
+  avatarMedia     MediaObject?          @relation("UserAvatar", fields: [avatarMediaId], references: [id], onDelete: SetNull)
+  comments        Comment[]
+  communities     Community[]
+  memberships     CommunityMembership[]
+  moderating      CommunityModerator[]  @relation("Moderator")
+  moderatorsAdded CommunityModerator[]  @relation("ModeratorAddedBy")
+  communityBans   CommunityBan[]        @relation("BannedUser")
+  bansIssued      CommunityBan[]        @relation("BannedBy")
+  mediaObjects    MediaObject[]         @relation("MediaOwner")
+  posts           Post[]
+  sessions        Session[]
+  postVotes       PostVote[]
+  commentVotes    CommentVote[]
+  postViews       PostView[]
+  postShares      PostShare[]
+  postVoteEvents  PostVoteEvent[]
+  following       UserFollow[]          @relation("Follower")
+  followers       UserFollow[]          @relation("Followed")
 
   @@map("users")
 }
@@ -83,19 +87,53 @@ model Session {
 }
 
 model Community {
-  id          String     @id @db.Uuid
-  creatorId   String     @map("creator_id") @db.Uuid
-  slug        String     @unique @db.VarChar(64)
-  name        String     @db.VarChar(100)
-  description String?    @db.VarChar(1000)
-  visibility  Visibility @default(public)
-  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime   @default(now()) @map("updated_at") @db.Timestamptz
-  creator     User       @relation(fields: [creatorId], references: [id])
+  id          String                @id @db.Uuid
+  creatorId   String                @map("creator_id") @db.Uuid
+  slug        String                @unique @db.VarChar(64)
+  name        String                @db.VarChar(100)
+  description String?               @db.VarChar(1000)
+  visibility  Visibility            @default(public)
+  createdAt   DateTime              @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime              @default(now()) @map("updated_at") @db.Timestamptz
+  creator     User                  @relation(fields: [creatorId], references: [id])
   memberships CommunityMembership[]
+  moderators  CommunityModerator[]
+  bans        CommunityBan[]
   posts       Post[]
 
   @@map("communities")
+}
+
+// Moderators can delete any post or comment in the community, ban users, edit the community and pin posts.
+// There is one level: any moderator can add or remove others, but a community always keeps at least one.
+model CommunityModerator {
+  communityId String    @map("community_id") @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  addedById   String?   @map("added_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user        User      @relation("Moderator", fields: [userId], references: [id], onDelete: Cascade)
+  addedBy     User?     @relation("ModeratorAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+
+  @@id([communityId, userId])
+  @@index([userId])
+  @@map("community_moderators")
+}
+
+// A banned user can't post, comment, or edit their posts and comments in the community.
+model CommunityBan {
+  communityId String    @map("community_id") @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  bannedById  String?   @map("banned_by_id") @db.Uuid
+  reason      String?   @db.VarChar(500)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user        User      @relation("BannedUser", fields: [userId], references: [id], onDelete: Cascade)
+  bannedBy    User?     @relation("BannedBy", fields: [bannedById], references: [id], onDelete: SetNull)
+
+  @@id([communityId, userId])
+  @@index([userId])
+  @@map("community_bans")
 }
 
 model CommunityMembership {
@@ -123,20 +161,22 @@ model UserFollow {
 }
 
 model Post {
-  id          String    @id @db.Uuid
-  publicId    String    @unique @map("public_id") @db.VarChar(12)
-  authorId    String    @map("author_id") @db.Uuid
-  communityId String    @map("community_id") @db.Uuid
-  postType    PostType  @map("post_type")
-  title       String    @db.VarChar(300)
+  id          String          @id @db.Uuid
+  publicId    String          @unique @map("public_id") @db.VarChar(12)
+  authorId    String          @map("author_id") @db.Uuid
+  communityId String          @map("community_id") @db.Uuid
+  postType    PostType        @map("post_type")
+  title       String          @db.VarChar(300)
   body        String?
-  externalUrl String?   @map("external_url")
-  score       Int       @default(0)
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime  @default(now()) @map("updated_at") @db.Timestamptz
-  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
-  author      User      @relation(fields: [authorId], references: [id])
-  community   Community @relation(fields: [communityId], references: [id])
+  externalUrl String?         @map("external_url")
+  score       Int             @default(0)
+  // Set when a moderator pins the post to the top of its community.
+  pinnedAt    DateTime?       @map("pinned_at") @db.Timestamptz
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime        @default(now()) @map("updated_at") @db.Timestamptz
+  deletedAt   DateTime?       @map("deleted_at") @db.Timestamptz
+  author      User            @relation(fields: [authorId], references: [id])
+  community   Community       @relation(fields: [communityId], references: [id])
   comments    Comment[]
   votes       PostVote[]
   views       PostView[]
@@ -146,24 +186,25 @@ model Post {
 
   @@index([communityId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([authorId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([communityId, pinnedAt])
   @@map("posts")
 }
 
 model Comment {
-  id        String    @id @db.Uuid
-  postId    String    @map("post_id") @db.Uuid
-  authorId  String    @map("author_id") @db.Uuid
-  parentId  String?   @map("parent_id") @db.Uuid
+  id        String        @id @db.Uuid
+  postId    String        @map("post_id") @db.Uuid
+  authorId  String        @map("author_id") @db.Uuid
+  parentId  String?       @map("parent_id") @db.Uuid
   body      String?
-  depth     Int       @default(0)
-  score     Int       @default(0)
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime  @default(now()) @map("updated_at") @db.Timestamptz
-  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
-  author    User      @relation(fields: [authorId], references: [id])
-  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
-  parent    Comment?  @relation("CommentReplies", fields: [parentId, postId], references: [id, postId])
-  replies   Comment[] @relation("CommentReplies")
+  depth     Int           @default(0)
+  score     Int           @default(0)
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime      @default(now()) @map("updated_at") @db.Timestamptz
+  deletedAt DateTime?     @map("deleted_at") @db.Timestamptz
+  author    User          @relation(fields: [authorId], references: [id])
+  post      Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  parent    Comment?      @relation("CommentReplies", fields: [parentId, postId], references: [id, postId])
+  replies   Comment[]     @relation("CommentReplies")
   votes     CommentVote[]
 
   @@unique([id, postId])

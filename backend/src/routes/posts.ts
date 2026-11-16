@@ -17,6 +17,8 @@ router.patch("/:postId", requireAuth, posts.updatePost);
 router.delete("/:postId", requireAuth, posts.deletePost);
 router.put("/:postId/vote", requireAuth, posts.votePost);
 router.delete("/:postId/vote", requireAuth, posts.unvotePost);
+router.put("/:postId/pin", requireAuth, posts.pinPost);
+router.delete("/:postId/pin", requireAuth, posts.unpinPost);
 router.post("/:postId/view", requireAuth, analytics.viewPost);
 router.post("/:postId/share", requireAuth, analytics.sharePost);
 

@@ -109,6 +109,15 @@ export function listCommunityPosts(communityId: string, limit = 20, cursor?: Pag
   });
 }
 
+// Oldest pin first, so a newly pinned post doesn't push the others down.
+export function listPinnedPosts(communityId: string) {
+  return prisma.post.findMany({
+    where: { communityId, deletedAt: null, pinnedAt: { not: null } },
+    orderBy: [{ pinnedAt: "asc" }, { id: "asc" }],
+    include: withPostDetails,
+  });
+}
+
 export function listHomeFeed(userId: string, limit = 20, cursor?: PageCursor) {
   return prisma.post.findMany({
     where: {
@@ -146,11 +155,12 @@ export async function updatePost(
 }
 
 // Soft-deletes the post and detaches its media, so the files can be deleted from storage.
-export async function deletePost(id: string, authorId: string): Promise<boolean> {
+// authorId null skips the author check, for moderators; the caller must have checked they moderate the community.
+export async function deletePost(id: string, authorId: string | null): Promise<boolean> {
   return prisma.$transaction(async (transaction) => {
     const result = await transaction.post.updateMany({
-      where: { id, authorId, deletedAt: null },
-      data: { body: null, externalUrl: null, deletedAt: new Date(), updatedAt: new Date() },
+      where: { id, deletedAt: null, ...(authorId !== null && { authorId }) },
+      data: { body: null, externalUrl: null, pinnedAt: null, deletedAt: new Date(), updatedAt: new Date() },
     });
     if (result.count !== 1) return false;
     await transaction.postMedia.deleteMany({ where: { postId: id } });
@@ -189,7 +199,7 @@ export async function updateComment(id: string, authorId: string, body: string) 
 export function getCommentOnPost(commentId: string, postId: string) {
   return prisma.comment.findFirst({
     where: { id: commentId, postId, deletedAt: null },
-    select: { id: true },
+    select: { id: true, authorId: true },
   });
 }
 
@@ -201,9 +211,10 @@ export function listComments(postId: string) {
   });
 }
 
-export async function deleteComment(id: string, authorId: string): Promise<boolean> {
+// authorId null skips the author check, for moderators; the caller must have checked they moderate the community.
+export async function deleteComment(id: string, authorId: string | null): Promise<boolean> {
   const result = await prisma.comment.updateMany({
-    where: { id, authorId, deletedAt: null },
+    where: { id, deletedAt: null, ...(authorId !== null && { authorId }) },
     data: { body: null, deletedAt: new Date(), updatedAt: new Date() },
   });
   return result.count === 1;
