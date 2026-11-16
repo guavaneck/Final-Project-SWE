@@ -1,5 +1,5 @@
 const state = {
-    view: 'home',        
+    view: 'home',
     communityId: null,
     postId: null,
     communities: [],
@@ -7,7 +7,12 @@ const state = {
     user: null,
     authMode: 'login',
     notice: null,
-    replyTo: null
+    replyTo: null,
+    commentDraft: '',
+    replyDrafts: {},
+    draftPostId: null,
+    analyticsRange: '30d',
+    analyticsPostId: null
 };
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -27,8 +32,47 @@ const communityName = (id) =>
 
 function go(view, extra = {}) {
     clearUploads();
-    Object.assign(state, { view, communityId: null, postId: null, replyTo: null }, extra);
+    const next = { view, communityId: null, postId: null, replyTo: null, analyticsPostId: null, ...extra };
+    const path = pathFor(next);
+    if (location.pathname !== path) history.pushState({}, '', path);
+    Object.assign(state, next);
     render();
+}
+
+function pathFor(next) {
+    if (next.view === 'post' && next.postId) return `/posts/${encodeURIComponent(next.postId)}`;
+    if (next.view === 'analytics' && next.analyticsPostId) return `/analytics/posts/${encodeURIComponent(next.analyticsPostId)}`;
+    if (next.view === 'analytics') return '/analytics';
+    if (next.view === 'profile') return '/profile';
+    if (next.view === 'newPost') return '/posts/new';
+    if (next.view === 'newCommunity') return '/communities/new';
+    if (next.view === 'home' && next.communityId) return `/communities/${encodeURIComponent(next.communityId)}`;
+    return '/';
+}
+
+function stateFromPath(pathname) {
+    if (pathname === '/') return { view: 'home', communityId: null, postId: null };
+    if (pathname === '/analytics') return { view: 'analytics', communityId: null, postId: null, analyticsPostId: null };
+    if (pathname === '/profile') return { view: 'profile', communityId: null, postId: null };
+    if (pathname === '/posts/new') return { view: 'newPost', communityId: null, postId: null };
+    if (pathname === '/communities/new') return { view: 'newCommunity', communityId: null, postId: null };
+    const post = /^\/posts\/([0-9A-HJKMNP-TV-Z]{12})$/i.exec(pathname);
+    if (post) return { view: 'post', communityId: null, postId: post[1] };
+    const analyticsPost = /^\/analytics\/posts\/([0-9A-HJKMNP-TV-Z]{12})$/i.exec(pathname);
+    if (analyticsPost) return { view: 'analytics', communityId: null, postId: null, analyticsPostId: analyticsPost[1] };
+    const community = /^\/communities\/([0-9a-f-]{36})$/i.exec(pathname);
+    if (community) return { view: 'home', communityId: community[1], postId: null };
+    return null;
+}
+
+function syncStateFromLocation() {
+    const route = stateFromPath(location.pathname);
+    if (!route) {
+        history.replaceState({}, '', '/');
+        Object.assign(state, { view: 'home', communityId: null, postId: null, replyTo: null });
+        return;
+    }
+    Object.assign(state, route, { replyTo: null });
 }
 
 function noticeView() {
@@ -61,6 +105,7 @@ async function render() {
         $('userBtn').textContent = 'Log in';
         $('nav').innerHTML = '';
         $('communities').innerHTML = '';
+        $('creatorStudio').innerHTML = '<p class="meta">Log in to view creator analytics.</p>';
         main.innerHTML = noticeView() + authView();
         return;
     }
@@ -82,10 +127,14 @@ async function render() {
         `<a class="navitem ${state.communityId === c.id ? 'active' : ''}"
         onclick="go('home',{communityId:${js(c.id)}})">c/${esc(c.name)}</a>`
         ).join('') || '<p class="meta">No communities yet.</p>';
-        const html = await pageView(state.user);
+        const [html, creatorAnalytics] = await Promise.all([
+            pageView(state.user),
+            api.getCreatorAnalytics('30d')
+        ]);
         if (current !== renderCount) return;
         shownPage = page;
         main.innerHTML = noticeView() + html;
+        $('creatorStudio').innerHTML = creatorStudioView(creatorAnalytics);
     } catch (err) {
         if (current !== renderCount) return;
         shownPage = null;
@@ -105,6 +154,7 @@ async function pageView(user) {
         case 'newPost':      return newPostView();
         case 'newCommunity': return newCommunityView();
         case 'profile':      return profileView(user);
+        case 'analytics':    return analyticsView();
     }
     return '';
 }
@@ -148,20 +198,22 @@ function setAuthMode(mode) {
 
 async function submitLogin() {
     try {
-        state.user = await api.login($('loginName').value.trim(), $('loginPassword').value);
-        go('home');
+        await api.login($('loginName').value.trim(), $('loginPassword').value);
+        state.user = null;
+        render();
     } catch (err) { fail(err); }
 }
 
 async function submitRegister() {
     try {
-        state.user = await api.register({
+        await api.register({
             username: $('regUsername').value.trim(),
             displayName: $('regDisplayName').value.trim(),
             email: $('regEmail').value.trim(),
             password: $('regPassword').value
         });
-        go('home');
+        state.user = null;
+        render();
     } catch (err) { fail(err); }
 }
 
@@ -197,7 +249,7 @@ function postCard(p, full = false) {
     ? `<div><a href="${esc(p.externalUrl)}" target="_blank" rel="noopener noreferrer">${esc(p.externalUrl)}</a></div>` : '';
     return `
     <div class="card post">
-    <div class="votes">${voteButtons(p, `vote(${js(p.id)},`)}</div>
+    <div class="votes" data-post-vote="${esc(p.id)}" data-vote="${p.vote}">${voteButtons(p, `vote(${js(p.id)},`)}</div>
     <div>
     <div class="meta">
     <span class="tag">c/${esc(communityName(p.communityId))}</span>
@@ -235,42 +287,159 @@ function voteButtons(item, call) {
 
 async function vote(id, value) {
     try {
-        await api.votePost(id, value);
-        render();
+        const summary = await api.votePost(id, value);
+        document.querySelectorAll(`[data-post-vote="${id}"]`).forEach((container) =>
+            updateVoteDisplay(container, summary, (next) => vote(id, next))
+        );
     } catch (err) { fail(err); }
 }
 
 async function voteComment(commentId, value) {
     try {
-        await api.voteComment(state.postId, commentId, value);
-        render();
+        const summary = await api.voteComment(state.postId, commentId, value);
+        document.querySelectorAll(`[data-comment-vote="${commentId}"]`).forEach((container) =>
+            updateVoteDisplay(container, summary, (next) => voteComment(commentId, next))
+        );
     } catch (err) { fail(err); }
+}
+
+function updateVoteDisplay(container, summary, submitVote) {
+    const vote = summary.viewerVote ?? 0;
+    const up = container.querySelector('button.up');
+    const down = container.querySelector('button.down');
+    const score = container.querySelector('b');
+    container.dataset.vote = vote;
+    up.classList.toggle('on', vote === 1);
+    down.classList.toggle('on', vote === -1);
+    score.classList.toggle('up', vote === 1);
+    score.classList.toggle('down', vote === -1);
+    score.textContent = summary.score;
+    up.onclick = () => submitVote(vote === 1 ? 0 : 1);
+    down.onclick = () => submitVote(vote === -1 ? 0 : -1);
 }
 
 // Post and comments
 async function postView(user) {
     const p = await api.getPost(state.postId);
+    if (state.draftPostId !== p.id) {
+        state.draftPostId = p.id;
+        state.commentDraft = '';
+        state.replyDrafts = {};
+    }
+    api.recordPostView(state.postId).catch(() => {});
     const authorTools = p.author === user.name
     ? `<div class="card meta">
+    <button class="link" onclick="go('analytics',{analyticsPostId:${js(p.id)}})">View post analytics</button>
     <button class="link danger" onclick="removePost(${js(p.id)})">Delete post</button>
     </div>` : '';
     const comments = p.comments.map(commentView).join('') || '<div class="empty">Be the first to comment.</div>';
     return `
     <button class="link" onclick="go('home')">← Back</button>
     ${postCard(p, true)}
+    <div class="card meta"><button class="link" onclick="shareCurrentPost()">↗ Share post</button></div>
     ${authorTools}
     <div class="card">
     <label for="commentBody">Add a comment</label>
-    <textarea id="commentBody"></textarea>
+    <textarea id="commentBody" oninput="state.commentDraft=this.value">${esc(state.commentDraft)}</textarea>
     <div class="row top-gap"><button class="primary" onclick="submitComment()">Comment</button></div>
     </div>
     <div class="card"><h3>Comments</h3>${comments}</div>`;
 }
 
+function creatorStudioView(data) {
+    const post = data.posts[0];
+    if (!post) return '<p class="meta">Publish a post to start seeing analytics.</p>';
+    return `<div class="studio-post-title">${esc(post.title)}</div>
+      <div class="meta studio-period">Most recent post · last 30 days</div>
+      <div class="studio-metrics">
+        <div><strong>${post.views}</strong><span>Views</span></div>
+        <div><strong class="up-text">${post.upvotes}</strong><span>Upvotes</span></div>
+        <div><strong class="down-text">${post.downvotes}</strong><span>Downvotes</span></div>
+        <div><strong>${post.shares}</strong><span>Shares</span></div>
+        <div><strong>${post.score}</strong><span>Score</span></div>
+      </div>`;
+}
+
+async function shareCurrentPost() {
+    try {
+        const url = `${location.origin}/posts/${encodeURIComponent(state.postId)}`;
+        await navigator.clipboard?.writeText(url);
+        await api.sharePost(state.postId);
+        state.notice = 'Post link copied.';
+        render();
+    } catch (err) { fail(err); }
+}
+
+function analyticsChart(post) {
+    const width = 720, height = 260, middle = 130, pad = 28;
+    const max = Math.max(1, ...post.series.flatMap((p) => [p.upvotes, p.downvotes]));
+    const scale = (middle - pad) / max;
+    const groupWidth = (width - pad * 2) / post.series.length;
+    const barWidth = Math.max(1, Math.min(9, groupWidth * .32));
+    const bars = post.series.map((point, index) => {
+      const center = pad + groupWidth * index + groupWidth / 2;
+      const upHeight = point.upvotes * scale;
+      const downHeight = point.downvotes * scale;
+      return `<rect class="chart-up" x="${center-barWidth-1}" y="${middle-upHeight}" width="${barWidth}" height="${upHeight}"></rect>
+        <rect class="chart-down" x="${center+1}" y="${middle}" width="${barWidth}" height="${downHeight}"></rect>`;
+    }).join('');
+    return `<div class="analytics-chart" role="img" aria-label="Upvotes above zero and downvotes below zero over time">
+      <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+        <line class="chart-axis" x1="${pad}" y1="${middle}" x2="${width-pad}" y2="${middle}"></line>
+        ${bars}
+      </svg>
+      <div class="chart-legend"><span class="up-dot"></span> Upvotes <span class="down-dot"></span> Downvotes</div>
+    </div>`;
+}
+
+async function analyticsView() {
+    const data = await api.getCreatorAnalytics(state.analyticsRange);
+    const selected = state.analyticsPostId
+      ? data.posts.find((post) => post.id === state.analyticsPostId)
+      : null;
+    const cards = [
+      ['Views', data.totals.views], ['Upvotes', data.totals.upvotes],
+      ['Downvotes', data.totals.downvotes], ['Shares', data.totals.shares], ['Net score', data.totals.score]
+    ].map(([label, value]) => `<div class="metric-card"><span>${esc(label)}</span><strong>${value}</strong></div>`).join('');
+    const rows = data.posts.map((post) => `<tr class="${selected?.id === post.id ? 'selected' : ''}" onclick="selectAnalyticsPost(${js(post.id)})" title="View analytics for this post">
+      <td><b>${esc(post.title)}</b><div class="meta">c/${esc(post.community)}</div></td>
+      <td>${post.views}</td><td class="up-text">${post.upvotes}</td><td class="down-text">${post.downvotes}</td>
+      <td>${post.shares}</td><td>${post.score}</td>
+    </tr>`).join('');
+    return `<section class="analytics-page">
+      ${selected ? `<nav class="analytics-breadcrumb" aria-label="Analytics navigation">
+        <button class="link" onclick="showAllAnalytics()">← All posts</button><span>/</span><span>${esc(selected.title)}</span>
+      </nav>` : ''}
+      <div class="analytics-heading"><div><h1>${selected ? 'Post analytics' : 'Creator analytics'}</h1><p class="meta">${selected ? esc(selected.title) : 'Performance for all your published posts'}</p></div>
+        <select aria-label="Analytics date range" onchange="setAnalyticsRange(this.value)">
+          ${['7d','30d','90d'].map((range) => `<option value="${range}"${range === state.analyticsRange ? ' selected' : ''}>Last ${range.slice(0,-1)} days</option>`).join('')}
+        </select>
+      </div>
+      <div class="metric-grid">${cards}</div>
+      ${selected ? `<div class="analytics-detail-actions row">
+        <button onclick="showAllAnalytics()">← All posts analytics</button>
+        <button onclick="go('post',{postId:${js(selected.id)}})">Open post</button>
+      </div>
+      <div class="card"><h2>Vote direction</h2><p class="meta">Daily vote totals: upvotes rise above zero and downvotes fall below it</p>${analyticsChart(selected)}</div>` : ''}
+      <div class="card analytics-table-card"><h2>${selected ? 'Switch post' : 'Your posts'}</h2>
+        ${rows ? `<div class="table-scroll"><table class="analytics-table"><thead><tr><th>Post</th><th>Views</th><th>Up</th><th>Down</th><th>Shares</th><th>Score</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="empty">Publish a post to start seeing analytics.</div>'}
+      </div>
+    </section>`;
+}
+
+function setAnalyticsRange(range) { state.analyticsRange = range; shownPage = null; render(); }
+function showAllAnalytics() { go('analytics'); }
+function selectAnalyticsPost(id) {
+    state.analyticsPostId = id;
+    history.pushState({}, '', `/analytics/posts/${encodeURIComponent(id)}`);
+    shownPage = null;
+    render();
+}
+
 function commentView(c) {
     const replyForm = state.replyTo === c.id ? `
     <label for="replyBody">Reply to u/${esc(c.author)}</label>
-    <textarea id="replyBody"></textarea>
+    <textarea id="replyBody" oninput="state.replyDrafts[${js(c.id)}]=this.value">${esc(state.replyDrafts[c.id] || '')}</textarea>
     <div class="row top-gap">
     <button class="primary" onclick="submitComment(${js(c.id)})">Reply</button>
     <button onclick="setReplyTo(null)">Cancel</button>
@@ -279,7 +448,7 @@ function commentView(c) {
     <div class="meta">u/${esc(c.author)} · ${timeAgo(c.created)}</div>
     ${esc(c.body)}
     ${c.deleted ? '' : `<div class="meta row">
-    <span class="votes inline">${voteButtons(c, `voteComment(${js(c.id)},`)}</span>
+    <span class="votes inline" data-comment-vote="${esc(c.id)}" data-vote="${c.vote}">${voteButtons(c, `voteComment(${js(c.id)},`)}</span>
     <button class="link" onclick="setReplyTo(${js(c.id)})">Reply</button>
     </div>`}
     ${replyForm}
@@ -297,6 +466,8 @@ async function submitComment(parentId) {
     if (!body) return;
     try {
         await api.addComment(state.postId, body, parentId);
+        if (parentId) delete state.replyDrafts[parentId];
+        else state.commentDraft = '';
         state.replyTo = null;
         render();
     } catch (err) { fail(err); }
@@ -519,8 +690,7 @@ function profileView(u) {
     </div>
     </div>`;
 }
+syncStateFromLocation();
+addEventListener('popstate', () => { syncStateFromLocation(); shownPage = null; render(); });
 render();
-
-
-
 

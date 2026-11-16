@@ -7,6 +7,7 @@ import postsRouter from "./routes/posts.js";
 import authRouter from "./routes/auth.js";
 import communitiesRouter from "./routes/communities.js";
 import mediaRouter from "./routes/media.js";
+import analyticsRouter from "./routes/analytics.js";
 import { cleanUpAbandonedMedia } from "./services/mediaService.js";
 
 const app = express();
@@ -18,11 +19,24 @@ app.use("/frontend/src", express.static(frontendDir));
 app.get("/", (_req, res) => {
   res.sendFile(path.join(frontendDir, "index.html"));
 });
+app.get("/analytics", (_req, res) => {
+  res.sendFile(path.join(frontendDir, "index.html"));
+});
+app.get("/analytics/posts/:postId", (_req, res) => {
+  res.sendFile(path.join(frontendDir, "index.html"));
+});
+app.get("/posts/:postId", (_req, res) => {
+  res.sendFile(path.join(frontendDir, "index.html"));
+});
+app.get(["/profile", "/communities/:communityId"], (_req, res) => {
+  res.sendFile(path.join(frontendDir, "index.html"));
+});
 
 app.use("/api/auth", authRouter);
 app.use("/api/posts", postsRouter);
 app.use("/api/communities", communitiesRouter);
 app.use("/api/media", mediaRouter);
+app.use("/api/analytics", analyticsRouter);
 
 app.use("/api", (_req, res) => {
   res.status(404).json({ error: "Not found" });
